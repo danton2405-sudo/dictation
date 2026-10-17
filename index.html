@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>智能默書掃描助手</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 離線備用 OCR 庫 -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
@@ -51,7 +52,7 @@
       <button id="btnQuickConfig" class="text-indigo-600 font-bold hover:underline">設定 / 測試 Key</button>
     </div>
 
-    <!-- 步驟 1: 拍照與相簿選取 (標準 iOS-Safe 標籤綁定) -->
+    <!-- 步驟 1: 拍照與相簿選取 -->
     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
       <h2 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2.5">
         1. 獲取相片 (拍照或相簿)
@@ -161,9 +162,9 @@
       <div class="bg-indigo-50/70 border border-indigo-100 p-2.5 rounded-xl flex items-center justify-between">
         <div class="flex items-center space-x-2">
           <input type="checkbox" id="chkReadPunc" class="w-4 h-4 text-indigo-600 rounded border-slate-300 bg-white" checked>
-          <label for="chkReadPunc" class="text-xs font-bold text-indigo-900">📝 默書模式 (讀出標點符號)</label>
+          <label for="chkReadPunc" class="text-xs font-bold text-indigo-900">📝 默書模式 (讀出所有中英文標點符號)</label>
         </div>
-        <span class="text-[10px] text-indigo-400">Comma / 逗號等</span>
+        <span class="text-[10px] text-indigo-500 font-medium">全標點朗讀已開啟</span>
       </div>
 
       <!-- 控制按鈕 -->
@@ -212,7 +213,7 @@
     </div>
   </div>
 
-  <!-- API 設定 Modal (含安全連線測試) -->
+  <!-- API 設定 Modal -->
   <div id="settingsModal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center px-4">
     <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
       <div class="flex justify-between items-center border-b pb-2">
@@ -315,7 +316,6 @@
     }
     refreshBadge();
 
-    // 監聽拍照與相簿
     cameraInput.addEventListener('change', (e) => {
       if (e.target.files && e.target.files[0]) handleImage(e.target.files[0]);
     });
@@ -323,7 +323,6 @@
       if (e.target.files && e.target.files[0]) handleImage(e.target.files[0]);
     });
 
-    // API Key 設定與安全測試
     const openSettings = () => {
       inputApiKey.value = userApiKey;
       testKeyFeedback.className = 'hidden';
@@ -381,7 +380,6 @@
       }
     });
 
-    // 盲測遮蔽切換
     btnToggleBlind.addEventListener('click', () => {
       isBlindMode = !isBlindMode;
       if (isBlindMode) {
@@ -396,7 +394,6 @@
       renderDisplayBoard(currentIndex);
     });
 
-    // 編輯 / 貼上切換
     btnToggleEdit.addEventListener('click', () => {
       isEditing = !isEditing;
       if (isEditing) {
@@ -417,16 +414,120 @@
       }
     });
 
+    // 智能分句：將主要標點作為分段依據，並完整保留句尾所有附屬標點（如引號、括號等）
     function splitTextIntoChunks(text) {
       if (!text) return [];
-      const regex = /[^，。！？；：,.!?;:\n]+[，。！？；：,.!?;:\n]*/g;
+      const regex = /[^，,。\.！!？\?；;：:\n、…—]+[，,。\.！!？\?；;：:\n、…—]*[”"』」）\)》〉\]]*/g;
       const arr = text.match(regex);
       if (!arr) return [text.trim()];
       return arr.map(s => s.trim()).filter(s => s.length > 0);
     }
 
+    // 盲測時保留標點符號，僅將中英文字詞轉為星號
     function maskText(str) {
       return str.replace(/[\u4e00-\u9fa5a-zA-Z0-9]/g, '*');
+    }
+
+    // ========== 全標點符號語音字典核心 ========== //
+    function processDictationPunctuation(text, voiceLang) {
+      const isEnglish = voiceLang.startsWith('en');
+
+      if (isEnglish) {
+        let res = text;
+        // 1. 省略號、破折號與字內撇號 (如 don't, it's)
+        res = res.replace(/(\.{3,}|…+|……+)/g, ' ellipsis. ');
+        res = res.replace(/(——+|—+)/g, ' dash, ');
+        res = res.replace(/([a-zA-Z])['’]([a-zA-Z])/g, '$1 apostrophe $2');
+
+        // 2. 成對標點 (雙引號、單引號、括號、書名號)
+        res = res.replace(/[“『]/g, ' open quote, ');
+        res = res.replace(/[”』]/g, ' close quote, ');
+        res = res.replace(/[‘「]/g, ' open single quote, ');
+        res = res.replace(/[’」]/g, ' close single quote, ');
+        res = res.replace(/[《〈]/g, ' open angle bracket, ');
+        res = res.replace(/[》〉]/g, ' close angle bracket, ');
+        res = res.replace(/[（(]/g, ' open bracket, ');
+        res = res.replace(/[）)]/g, ' close bracket, ');
+        res = res.replace(/[［\[]/g, ' open square bracket, ');
+        res = res.replace(/[］\]]/g, ' close square bracket, ');
+
+        // 3. 中立引號交替處理
+        let openD = true;
+        res = res.replace(/"/g, () => {
+          const str = openD ? ' open quote, ' : ' close quote, ';
+          openD = !openD;
+          return str;
+        });
+        let openS = true;
+        res = res.replace(/'/g, () => {
+          const str = openS ? ' open single quote, ' : ' close single quote, ';
+          openS = !openS;
+          return str;
+        });
+
+        // 4. 標準英文標點符號
+        res = res.replace(/[，,、]/g, ' comma, ');
+        res = res.replace(/[。.]/g, ' full stop. ');
+        res = res.replace(/[？?]/g, ' question mark? ');
+        res = res.replace(/[！!]/g, ' exclamation mark! ');
+        res = res.replace(/[：:]/g, ' colon: ');
+        res = res.replace(/[；;]/g, ' semicolon; ');
+        res = res.replace(/[-]/g, ' hyphen ');
+        res = res.replace(/[/／]/g, ' slash ');
+        res = res.replace(/[~～]/g, ' tilde ');
+        res = res.replace(/\n/g, ' new line. ');
+
+        return res;
+      } else {
+        // 廣東話 / 中文全標點
+        let res = text;
+        // 1. 省略號與破折號
+        res = res.replace(/(\.{3,}|…+|……+)/g, ' 省略號， ');
+        res = res.replace(/(——+|—+)/g, ' 破折號， ');
+
+        // 2. 書名號、引號與各類括號
+        res = res.replace(/[《]/g, ' 開書名號， ');
+        res = res.replace(/[》]/g, ' 關書名號， ');
+        res = res.replace(/[〈]/g, ' 開單書名號， ');
+        res = res.replace(/[〉]/g, ' 關單書名號， ');
+        res = res.replace(/[“『]/g, ' 開引號， ');
+        res = res.replace(/[”』]/g, ' 關引號， ');
+        res = res.replace(/[‘「]/g, ' 開單引號， ');
+        res = res.replace(/[’」]/g, ' 關單引號， ');
+        res = res.replace(/[（(]/g, ' 開括號， ');
+        res = res.replace(/[）)]/g, ' 關括號， ');
+        res = res.replace(/[［\[]/g, ' 開方括號， ');
+        res = res.replace(/[］\]]/g, ' 關方括號， ');
+
+        // 3. 中立引號交替處理
+        let openD = true;
+        res = res.replace(/"/g, () => {
+          const str = openD ? ' 開引號， ' : ' 關引號， ';
+          openD = !openD;
+          return str;
+        });
+        let openS = true;
+        res = res.replace(/'/g, () => {
+          const str = openS ? ' 開單引號， ' : ' 關單引號， ';
+          openS = !openS;
+          return str;
+        });
+
+        // 4. 標準中文標點符號
+        res = res.replace(/[。.]/g, ' 句號。 ');
+        res = res.replace(/[，,]/g, ' 逗號， ');
+        res = res.replace(/、/g, ' 頓號， ');
+        res = res.replace(/[？?]/g, ' 問號？ ');
+        res = res.replace(/[！!]/g, ' 感嘆號！ ');
+        res = res.replace(/[：:]/g, ' 冒號： ');
+        res = res.replace(/[；;]/g, ' 分號； ');
+        res = res.replace(/[-–]/g, ' 連接號， ');
+        res = res.replace(/[/／]/g, ' 斜線， ');
+        res = res.replace(/[~～]/g, ' 波浪號， ');
+        res = res.replace(/\n/g, ' 開新行。 ');
+
+        return res;
+      }
     }
 
     function renderDisplayBoard(activeIdx) {
@@ -490,7 +591,6 @@
       updateProgressUI();
     }
 
-    // 篇章存檔管理
     btnSaveCurrent.addEventListener('click', () => {
       if (isEditing) btnToggleEdit.click();
       if (!rawFullText.trim()) return alert('目前沒有文字可以儲存！');
@@ -574,7 +674,6 @@
       renderDisplayBoard(-1);
     });
 
-    // 壓縮相片至最佳尺寸 (900px, ~100KB)，極速上傳且絕不超限
     function compressImage(file) {
       return new Promise((resolve) => {
         const img = new Image();
@@ -597,7 +696,6 @@
       });
     }
 
-    // 處理圖片上傳與 OCR
     async function handleImage(file) {
       if (!file) return;
       const base64DataUrl = await compressImage(file);
@@ -616,7 +714,7 @@
         const formData = new FormData();
         formData.append('apikey', activeKey);
         formData.append('base64Image', base64DataUrl);
-        formData.append('language', 'cht'); // 繁體中文 + 英文
+        formData.append('language', 'cht');
         formData.append('isOverlayRequired', 'false');
         formData.append('detectOrientation', 'true');
         formData.append('scale', 'true');
@@ -660,7 +758,6 @@
       setTimeout(() => ocrProgressBox.classList.add('hidden'), 1200);
     }
 
-    // TTS 發音引擎
     function loadVoices() {
       if (!('speechSynthesis' in window)) return;
       availableVoices = window.speechSynthesis.getVoices();
@@ -721,45 +818,6 @@
       });
     });
 
-    function processDictationPunctuation(text, voiceLang) {
-      const isEnglish = voiceLang.startsWith('en');
-      if (isEnglish) {
-        return text
-          .replace(/,/g, ' comma, ')
-          .replace(/，/g, ' comma, ')
-          .replace(/\./g, ' full stop. ')
-          .replace(/。/g, ' full stop. ')
-          .replace(/\?/g, ' question mark? ')
-          .replace(/？/g, ' question mark? ')
-          .replace(/!/g, ' exclamation mark! ')
-          .replace(/！/g, ' exclamation mark! ')
-          .replace(/:/g, ' colon: ')
-          .replace(/：/g, ' colon: ')
-          .replace(/;/g, ' semi colon; ')
-          .replace(/；/g, ' semi colon; ')
-          .replace(/"(.*?)"/g, ' quote, $1, unquote. ')
-          .replace(/「(.*?)」/g, ' quote, $1, unquote. ')
-          .replace(/\n/g, ' new line. ');
-      } else {
-        return text
-          .replace(/,/g, ' 逗號， ')
-          .replace(/，/g, ' 逗號， ')
-          .replace(/\./g, ' 句號。 ')
-          .replace(/。/g, ' 句號。 ')
-          .replace(/\?/g, ' 問號？ ')
-          .replace(/？/g, ' 問號？ ')
-          .replace(/!/g, ' 感嘆號！ ')
-          .replace(/！/g, ' 感嘆號！ ')
-          .replace(/:/g, ' 冒號： ')
-          .replace(/：/g, ' 冒號： ')
-          .replace(/;/g, ' 分號； ')
-          .replace(/；/g, ' 分號； ')
-          .replace(/"(.*?)"/g, ' 開引號，$1，關引號。 ')
-          .replace(/「(.*?)」/g, ' 開引號，$1，關引號。 ')
-          .replace(/\n/g, ' 開新行。 ');
-      }
-    }
-
     function speakText(textToRead) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(textToRead);
@@ -787,7 +845,6 @@
       window.speechSynthesis.speak(utterance);
     }
 
-    // 下一句
     btnNext.addEventListener('click', (e) => {
       e.preventDefault();
       if (isEditing) btnToggleEdit.click();
@@ -806,7 +863,6 @@
       speakText(currentSentences[currentIndex]);
     });
 
-    // 上一句
     btnPrev.addEventListener('click', (e) => {
       e.preventDefault();
       if (isEditing) btnToggleEdit.click();
@@ -824,7 +880,6 @@
       speakText(currentSentences[currentIndex]);
     });
 
-    // 重聽當前句
     btnReplay.addEventListener('click', (e) => {
       e.preventDefault();
       if (!currentSentences.length) return;
@@ -832,7 +887,6 @@
       speakText(currentSentences[currentIndex]);
     });
 
-    // 全部朗讀
     btnPlayAll.addEventListener('click', (e) => {
       e.preventDefault();
       if (isEditing) btnToggleEdit.click();
@@ -842,7 +896,6 @@
       speakText(rawFullText);
     });
 
-    // 停止朗讀
     btnStop.addEventListener('click', (e) => {
       e.preventDefault();
       window.speechSynthesis.cancel();
