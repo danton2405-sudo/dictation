@@ -2,10 +2,9 @@
 <html lang="zh-HK">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>智能默書掃描助手</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- 本地備用 OCR 庫 -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
@@ -22,7 +21,6 @@
       white-space: nowrap;
       border: 0;
     }
-    /* 高亮顯示的文字樣式 */
     .active-sentence {
       background-color: #e0e7ff;
       color: #312e81;
@@ -33,10 +31,10 @@
     }
   </style>
 </head>
-<body class="bg-slate-50 text-slate-800 min-h-screen pb-12">
+<body class="bg-slate-50 text-slate-800 min-h-screen pb-16">
 
   <!-- 頂部導航 -->
-  <header class="bg-indigo-600 text-white shadow-md sticky top-0 z-50">
+  <header class="bg-indigo-600 text-white shadow-md sticky top-0 z-40">
     <div class="max-w-xl mx-auto px-4 py-3 flex items-center justify-between">
       <div class="flex items-center space-x-2">
         <i class="fa-solid fa-pen-clip text-xl"></i>
@@ -82,8 +80,8 @@
 
       <!-- 圖片預覽 -->
       <div id="previewContainer" class="hidden">
-        <div class="relative rounded-xl overflow-hidden bg-slate-900 border border-slate-200 max-h-60 flex items-center justify-center">
-          <img id="imagePreview" src="" alt="預覽圖片" class="max-h-60 w-full object-contain">
+        <div class="relative rounded-xl overflow-hidden bg-slate-900 border border-slate-200 max-h-56 flex items-center justify-center">
+          <img id="imagePreview" src="" alt="預覽圖片" class="max-h-56 w-full object-contain">
           <button id="btnRemoveImage" class="absolute top-2 right-2 bg-black/60 text-white rounded-full p-2 text-xs hover:bg-black/80">
             <i class="fa-solid fa-times"></i>
           </button>
@@ -102,7 +100,7 @@
       </div>
     </div>
 
-    <!-- 步驟 2: 識別文字結果 (無鍵盤干擾的智能顯示板) -->
+    <!-- 步驟 2: 識別文字結果 (純內部滾動容器) -->
     <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
       <div class="flex items-center justify-between mb-2">
         <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider">
@@ -117,12 +115,11 @@
         </div>
       </div>
       
-      <!-- 閱讀高亮板 (正常閱讀模式，點擊下一句不會彈鍵盤) -->
-      <div id="textDisplayBox" class="min-h-[140px] max-h-64 overflow-y-auto p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm leading-relaxed text-slate-800 break-words whitespace-pre-wrap select-none">
+      <!-- relative 定位，確保內部計算絕對安全 -->
+      <div id="textDisplayBox" class="relative min-h-[140px] max-h-60 overflow-y-auto p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm leading-relaxed text-slate-800 break-words whitespace-pre-wrap select-none scroll-smooth">
         <span class="text-slate-400">拍下相片或選取相片後，掃描出的文字會顯示在此...</span>
       </div>
 
-      <!-- 編輯用輸入框 (只有點擊「編輯文字」時才會顯示) -->
       <textarea id="recognizedText" rows="6" class="hidden w-full p-3 bg-white border-2 border-indigo-500 rounded-xl text-sm leading-relaxed focus:outline-none transition mt-2" placeholder="在此修正或修改文字..."></textarea>
     </div>
 
@@ -165,7 +162,7 @@
         <p class="text-[10px] text-indigo-500 leading-tight">每按一次讀下一句，會自動讀出逗號、句號或 comma、full stop。</p>
       </div>
 
-      <!-- 按鈕區 -->
+      <!-- 按鈕控制區 -->
       <div class="pt-1 grid grid-cols-3 gap-2">
         <button id="btnPlay" class="col-span-1 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 font-bold py-3.5 px-2 rounded-xl transition flex flex-col items-center space-y-1">
           <i class="fa-solid fa-play text-lg"></i>
@@ -286,7 +283,6 @@
     let currentIndex = 0;
     let rawFullText = "";
 
-    // 切換編輯與完成
     btnToggleEdit.addEventListener('click', () => {
       isEditing = !isEditing;
       if (isEditing) {
@@ -418,7 +414,7 @@
       renderDisplayBoard(-1);
     }
 
-    // 智能高亮閱讀板渲染器
+    // 修復核心：純內部滾動，100% 杜絕手機視窗上下亂跳
     function renderDisplayBoard(highlightIdx) {
       if (!rawFullText) {
         textDisplayBox.innerHTML = '<span class="text-slate-400">拍下相片或選取相片後，掃描出的文字會顯示在此...</span>';
@@ -428,21 +424,33 @@
       currentSentences = splitTextIntoChunks(rawFullText);
       textDisplayBox.innerHTML = '';
 
+      let activeElement = null;
+
       currentSentences.forEach((chunk, idx) => {
         const span = document.createElement('span');
         span.innerText = chunk;
         if (idx === highlightIdx) {
           span.className = 'active-sentence transition-all duration-200';
-          // 自動滾動使當前朗讀的句子保持在可見視野中
-          setTimeout(() => {
-            span.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }, 50);
+          activeElement = span;
         } else {
           span.className = 'text-slate-800';
         }
         textDisplayBox.appendChild(span);
         textDisplayBox.appendChild(document.createTextNode(' '));
       });
+
+      // 關鍵修復：僅控制 textDisplayBox 內部的 scrollTop，絕不呼叫 scrollIntoView
+      if (activeElement) {
+        const parentTop = textDisplayBox.offsetTop;
+        const elemTop = activeElement.offsetTop;
+        const relativeTop = elemTop - parentTop;
+        const targetScroll = relativeTop - (textDisplayBox.clientHeight / 2) + (activeElement.clientHeight / 2);
+        
+        textDisplayBox.scrollTo({
+          top: Math.max(0, targetScroll),
+          behavior: 'smooth'
+        });
+      }
     }
 
     // 載入系統 TTS
@@ -595,8 +603,9 @@
     }
 
     // 點擊「下一句」
-    btnNext.addEventListener('click', () => {
-      // 如果正在編輯模式，自動切換回閱讀板
+    btnNext.addEventListener('click', (e) => {
+      e.preventDefault(); // 防止按鈕預設觸發焦點位移
+
       if (isEditing) {
         btnToggleEdit.click();
       }
@@ -614,7 +623,7 @@
 
       const chunkToSpeak = currentSentences[currentIndex];
 
-      // 高亮顯示該句子，並自動滾動，完全不呼叫 input.focus()
+      // 純框內高亮與居中，絕不帶動螢幕跳動
       renderDisplayBoard(currentIndex);
 
       sentenceProgress.classList.remove('hidden');
@@ -625,7 +634,8 @@
     });
 
     // 點擊「全部朗讀」
-    btnPlay.addEventListener('click', () => {
+    btnPlay.addEventListener('click', (e) => {
+      e.preventDefault();
       if (isEditing) btnToggleEdit.click();
       if (!rawFullText) return alert('請先拍照或輸入文字！');
       resetProgress();
@@ -634,7 +644,8 @@
     });
 
     // 點擊「停止」
-    btnStop.addEventListener('click', () => {
+    btnStop.addEventListener('click', (e) => {
+      e.preventDefault();
       window.speechSynthesis.cancel();
       btnNext.classList.remove('loading-pulse');
       btnNext.innerHTML = '<i class="fa-solid fa-forward-step text-lg"></i><span class="text-[13px] tracking-wide">讀下一段 / 下一句</span>';
