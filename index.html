@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>智能默書掃描助手</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- 離線備用 OCR 引擎 -->
+  <!-- 離線備用 OCR 庫 -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
@@ -46,45 +46,45 @@
     <!-- 狀態標籤欄 -->
     <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between text-xs">
       <div class="flex items-center space-x-2">
-        <span class="font-semibold text-slate-600">OCR 模式：</span>
+        <span class="font-semibold text-slate-600">辨識狀態：</span>
         <span id="engineBadge" class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-medium">預設通道</span>
       </div>
-      <button id="btnQuickConfig" class="text-indigo-600 font-bold hover:underline">自訂 / 測試 Key</button>
+      <button id="btnQuickConfig" class="text-indigo-600 font-bold hover:underline">設定 / 測試 Key</button>
     </div>
 
-    <!-- 步驟 1: 拍照與相簿選取 (已解決相簿變灰與無法重選問題) -->
+    <!-- 步驟 1: 拍照與相簿選取 (原生透明覆蓋，100% 觸發相機與相簿) -->
     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
       <h2 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2.5">
         1. 獲取相片 (拍照或相簿)
       </h2>
 
-      <!-- 隱藏 input，accept="image/*" 解決 iPhone HEIC 變灰不可點選問題 -->
-      <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden">
-      <input type="file" id="galleryInput" accept="image/*" class="hidden">
-
       <div class="grid grid-cols-2 gap-3 mb-2">
-        <button type="button" id="btnCamera" class="flex items-center justify-center space-x-2 p-3 bg-indigo-50 hover:bg-indigo-100 active:scale-95 text-indigo-700 rounded-xl border border-indigo-200 transition">
+        <!-- 即時拍照按鈕 (原生 input 覆蓋) -->
+        <div class="relative flex items-center justify-center space-x-2 p-3 bg-indigo-50 hover:bg-indigo-100 active:scale-95 text-indigo-700 rounded-xl border border-indigo-200 transition overflow-hidden">
           <i class="fa-solid fa-camera text-lg"></i>
           <span class="text-xs font-semibold">即時拍照</span>
-        </button>
+          <input type="file" id="cameraInput" accept="image/*" capture="environment" class="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10">
+        </div>
 
-        <button type="button" id="btnGallery" class="flex items-center justify-center space-x-2 p-3 bg-emerald-50 hover:bg-emerald-100 active:scale-95 text-emerald-700 rounded-xl border border-emerald-200 transition">
+        <!-- 相簿選取按鈕 (原生 input 覆蓋，支援 HEIC/JPG/PNG) -->
+        <div class="relative flex items-center justify-center space-x-2 p-3 bg-emerald-50 hover:bg-emerald-100 active:scale-95 text-emerald-700 rounded-xl border border-emerald-200 transition overflow-hidden">
           <i class="fa-solid fa-images text-lg"></i>
           <span class="text-xs font-semibold">相簿選取</span>
-        </button>
+          <input type="file" id="galleryInput" accept="image/*" class="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10">
+        </div>
       </div>
 
       <!-- 圖片預覽區域 -->
       <div id="previewContainer" class="hidden mt-2">
         <div class="relative rounded-xl overflow-hidden bg-slate-900 border border-slate-200 max-h-48 flex items-center justify-center">
           <img id="imagePreview" src="" alt="預覽圖片" class="max-h-48 w-full object-contain">
-          <button id="btnRemoveImage" class="absolute top-2 right-2 bg-black/60 text-white rounded-full p-2 text-xs hover:bg-black/80">
+          <button id="btnRemoveImage" class="absolute top-2 right-2 bg-black/60 text-white rounded-full p-2 text-xs hover:bg-black/80 z-20">
             <i class="fa-solid fa-times"></i>
           </button>
         </div>
       </div>
 
-      <!-- 進度狀態顯示 -->
+      <!-- 進度指示條 -->
       <div id="ocrProgressBox" class="hidden mt-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
         <div class="flex justify-between text-xs font-semibold text-slate-600 mb-1">
           <span id="ocrStatusText">準備掃描...</span>
@@ -104,19 +104,16 @@
         </h2>
         
         <div class="flex items-center space-x-2 text-xs">
-          <!-- 盲測按鈕 -->
           <button id="btnToggleBlind" class="px-2 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 font-semibold flex items-center space-x-1 transition">
             <i class="fa-solid fa-eye" id="blindIcon"></i>
             <span id="blindText">遮蔽</span>
           </button>
 
-          <!-- 編輯切換 -->
           <button id="btnToggleEdit" class="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 font-semibold flex items-center space-x-1 transition">
             <i class="fa-solid fa-pen"></i>
             <span id="editBtnText">編輯</span>
           </button>
 
-          <!-- 存檔 -->
           <button id="btnSaveCurrent" class="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 font-semibold flex items-center space-x-1 transition">
             <i class="fa-solid fa-floppy-disk"></i>
             <span>存檔</span>
@@ -215,294 +212,5 @@
     </div>
   </div>
 
-  <!-- API 設定 Modal (含測試連線功能) -->
-  <div id="settingsModal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center px-4">
-    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
-      <div class="flex justify-between items-center border-b pb-2">
-        <h3 class="text-sm font-bold text-slate-800">OCR.Space API Key 設定</h3>
-        <button id="btnCloseModal" class="text-slate-400 hover:text-slate-600 text-lg"><i class="fa-solid fa-times"></i></button>
-      </div>
-      
-      <div class="space-y-3">
-        <p class="text-xs text-slate-600 leading-relaxed">
-          若公共通道繁忙，填入個人免費 Key 即可享受獨立線路（每人每月免費 25,000 次）：
-        </p>
-
-        <div>
-          <label class="block text-xs font-semibold text-slate-700 mb-1">你的專屬 API Key：</label>
-          <input type="text" id="inputApiKey" placeholder="留空則使用預設通道" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono">
-          <p class="text-[11px] text-slate-400 mt-1">
-            未有 Key？請至 <a href="https://ocr.space/ocrapi/freekey" target="_blank" class="text-indigo-600 underline font-semibold">ocr.space/ocrapi/freekey</a> 免費獲取（填寫 Email 即收到）。
-          </p>
-        </div>
-
-        <div id="testKeyFeedback" class="text-xs font-semibold hidden p-2 rounded-lg"></div>
-      </div>
-
-      <div class="flex space-x-2 pt-1">
-        <button id="btnTestKey" class="w-1/3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs transition">測試 Key</button>
-        <button id="btnSaveKey" class="w-2/3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-xs transition">儲存並使用</button>
-      </div>
-    </div>
-  </div>
-
-  <canvas id="compressCanvas" class="hidden"></canvas>
-
-  <script>
-    const btnCamera = document.getElementById('btnCamera');
-    const btnGallery = document.getElementById('btnGallery');
-    const cameraInput = document.getElementById('cameraInput');
-    const galleryInput = document.getElementById('galleryInput');
-    const previewContainer = document.getElementById('previewContainer');
-    const imagePreview = document.getElementById('imagePreview');
-    const btnRemoveImage = document.getElementById('btnRemoveImage');
-    
-    const ocrProgressBox = document.getElementById('ocrProgressBox');
-    const ocrStatusText = document.getElementById('ocrStatusText');
-    const ocrPercentText = document.getElementById('ocrPercentText');
-    const ocrProgressBar = document.getElementById('ocrProgressBar');
-    
-    const textDisplayBox = document.getElementById('textDisplayBox');
-    const recognizedText = document.getElementById('recognizedText');
-    const btnToggleEdit = document.getElementById('btnToggleEdit');
-    const editBtnText = document.getElementById('editBtnText');
-    const btnToggleBlind = document.getElementById('btnToggleBlind');
-    const blindIcon = document.getElementById('blindIcon');
-    const blindText = document.getElementById('blindText');
-    const btnSaveCurrent = document.getElementById('btnSaveCurrent');
-    const btnClearText = document.getElementById('btnClearText');
-
-    const voiceSelect = document.getElementById('voiceSelect');
-    const speedButtons = document.querySelectorAll('.speed-btn');
-    const btnPrev = document.getElementById('btnPrev');
-    const btnReplay = document.getElementById('btnReplay');
-    const btnNext = document.getElementById('btnNext');
-    const btnPlayAll = document.getElementById('btnPlayAll');
-    const btnStop = document.getElementById('btnStop');
-    const chkReadPunc = document.getElementById('chkReadPunc');
-    const sentenceProgress = document.getElementById('sentenceProgress');
-    const compressCanvas = document.getElementById('compressCanvas');
-
-    const btnOpenFiles = document.getElementById('btnOpenFiles');
-    const filesModal = document.getElementById('filesModal');
-    const btnCloseFiles = document.getElementById('btnCloseFiles');
-    const savedFilesList = document.getElementById('savedFilesList');
-
-    const engineBadge = document.getElementById('engineBadge');
-    const btnOpenSettings = document.getElementById('btnOpenSettings');
-    const btnQuickConfig = document.getElementById('btnQuickConfig');
-    const settingsModal = document.getElementById('settingsModal');
-    const btnCloseModal = document.getElementById('btnCloseModal');
-    const btnSaveKey = document.getElementById('btnSaveKey');
-    const btnTestKey = document.getElementById('btnTestKey');
-    const inputApiKey = document.getElementById('inputApiKey');
-    const testKeyFeedback = document.getElementById('testKeyFeedback');
-
-    let currentRate = 1.0;
-    let availableVoices = [];
-    const DEFAULT_KEY = 'K87899142388957';
-    let userApiKey = localStorage.getItem('ocrspace_user_key') || '';
-    
-    let isEditing = false;
-    let isBlindMode = false;
-    let rawFullText = "";
-    let currentSentences = [];
-    let currentIndex = 0;
-
-    function refreshBadge() {
-      if (userApiKey) {
-        engineBadge.className = 'bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-semibold';
-        engineBadge.innerText = '專屬 API Key';
-      } else {
-        engineBadge.className = 'bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-medium';
-        engineBadge.innerText = '預設通道';
-      }
-    }
-    refreshBadge();
-
-    // 觸發拍照與選取 (重設 value 確保每次點選都有反應)
-    btnCamera.addEventListener('click', () => {
-      cameraInput.value = '';
-      cameraInput.click();
-    });
-    btnGallery.addEventListener('click', () => {
-      galleryInput.value = '';
-      galleryInput.click();
-    });
-
-    cameraInput.addEventListener('change', (e) => { if (e.target.files.length > 0) handleImage(e.target.files[0]); });
-    galleryInput.addEventListener('change', (e) => { if (e.target.files.length > 0) handleImage(e.target.files[0]); });
-
-    // API Key 設定與即時測試
-    const openSettings = () => {
-      inputApiKey.value = userApiKey;
-      testKeyFeedback.className = 'hidden';
-      settingsModal.classList.remove('hidden');
-    };
-    btnOpenSettings.addEventListener('click', openSettings);
-    btnQuickConfig.addEventListener('click', openSettings);
-    btnCloseModal.addEventListener('click', () => settingsModal.classList.add('hidden'));
-
-    btnSaveKey.addEventListener('click', () => {
-      userApiKey = inputApiKey.value.trim();
-      if (userApiKey) localStorage.setItem('ocrspace_user_key', userApiKey);
-      else localStorage.removeItem('ocrspace_user_key');
-      refreshBadge();
-      settingsModal.classList.add('hidden');
-    });
-
-    btnTestKey.addEventListener('click', async () => {
-      const keyToTest = inputApiKey.value.trim() || DEFAULT_KEY;
-      testKeyFeedback.className = 'text-xs font-semibold p-2 rounded-lg bg-blue-50 text-blue-700 block';
-      testKeyFeedback.innerText = '正在測試連線中...';
-
-      try {
-        const fd = new FormData();
-        fd.append('apikey', keyToTest); // 放在 FormData 內，防止 CORS preflight 失敗
-        fd.append('base64Image', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAA=");
-        fd.append('language', 'eng');
-
-        const res = await fetch('https://api.ocr.space/parse/image', {
-          method: 'POST',
-          body: fd
-        });
-        const d = await res.json();
-        if (d.OCRExitCode === 1 || d.OCRExitCode === 2) {
-          testKeyFeedback.className = 'text-xs font-semibold p-2 rounded-lg bg-emerald-50 text-emerald-700 block';
-          testKeyFeedback.innerText = '✅ 連線成功！此 API Key 運作完全正常。';
-        } else {
-          testKeyFeedback.className = 'text-xs font-semibold p-2 rounded-lg bg-rose-50 text-rose-700 block';
-          testKeyFeedback.innerText = '❌ 驗證失敗：' + (d.ErrorMessage ? d.ErrorMessage.join(', ') : 'Key 無效');
-        }
-      } catch (err) {
-        testKeyFeedback.className = 'text-xs font-semibold p-2 rounded-lg bg-rose-50 text-rose-700 block';
-        testKeyFeedback.innerText = '❌ 連線錯誤：' + err.message;
-      }
-    });
-
-    // 盲測 / 遮蔽切換
-    btnToggleBlind.addEventListener('click', () => {
-      isBlindMode = !isBlindMode;
-      if (isBlindMode) {
-        blindIcon.className = 'fa-solid fa-eye-slash';
-        blindText.innerText = '顯示';
-        btnToggleBlind.className = 'px-2 py-1 rounded-lg bg-indigo-600 text-white font-semibold flex items-center space-x-1 transition';
-      } else {
-        blindIcon.className = 'fa-solid fa-eye';
-        blindText.innerText = '遮蔽';
-        btnToggleBlind.className = 'px-2 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 font-semibold flex items-center space-x-1 transition';
-      }
-      renderDisplayBoard(currentIndex);
-    });
-
-    // 編輯文字切換
-    btnToggleEdit.addEventListener('click', () => {
-      isEditing = !isEditing;
-      if (isEditing) {
-        recognizedText.value = rawFullText;
-        recognizedText.classList.remove('hidden');
-        textDisplayBox.classList.add('hidden');
-        editBtnText.innerText = '完成';
-        btnToggleEdit.classList.add('text-emerald-600');
-        recognizedText.focus();
-      } else {
-        rawFullText = recognizedText.value;
-        recognizedText.classList.add('hidden');
-        textDisplayBox.classList.remove('hidden');
-        editBtnText.innerText = '編輯';
-        btnToggleEdit.classList.remove('text-emerald-600');
-        resetProgress();
-        renderDisplayBoard(-1);
-      }
-    });
-
-    function splitTextIntoChunks(text) {
-      if (!text) return [];
-      const regex = /[^，。！？；：,.!?;:\n]+[，。！？；：,.!?;:\n]*/g;
-      const arr = text.match(regex);
-      if (!arr) return [text.trim()];
-      return arr.map(s => s.trim()).filter(s => s.length > 0);
-    }
-
-    function maskText(str) {
-      return str.replace(/[\u4e00-\u9fa5a-zA-Z0-9]/g, '*');
-    }
-
-    function renderDisplayBoard(activeIdx) {
-      if (!rawFullText) {
-        textDisplayBox.innerHTML = '<div class="text-slate-400 p-2 text-center text-xs">請拍照、上傳圖片或點右上角載入歷史篇章...</div>';
-        return;
-      }
-
-      currentSentences = splitTextIntoChunks(rawFullText);
-      textDisplayBox.innerHTML = '';
-
-      let activeRowElement = null;
-
-      currentSentences.forEach((chunk, idx) => {
-        const row = document.createElement('div');
-        row.className = `p-2 rounded-lg border border-slate-200/80 bg-white flex items-start space-x-2 cursor-pointer transition ${idx === activeIdx ? 'active-row shadow-sm' : 'hover:bg-slate-100/60'}`;
-        
-        row.addEventListener('click', (e) => {
-          e.preventDefault();
-          currentIndex = idx;
-          renderDisplayBoard(currentIndex);
-          updateProgressUI();
-          speakText(currentSentences[currentIndex]);
-        });
-
-        const numSpan = document.createElement('span');
-        numSpan.className = 'text-xs font-bold text-slate-400 mt-0.5 select-none min-w-[20px]';
-        numSpan.innerText = `${idx + 1}.`;
-
-        const contentSpan = document.createElement('span');
-        contentSpan.className = 'text-xs font-medium leading-relaxed flex-1';
-        contentSpan.innerText = isBlindMode ? maskText(chunk) : chunk;
-
-        row.appendChild(numSpan);
-        row.appendChild(contentSpan);
-        textDisplayBox.appendChild(row);
-
-        if (idx === activeIdx) activeRowElement = row;
-      });
-
-      if (activeRowElement) {
-        const parentTop = textDisplayBox.offsetTop;
-        const elemTop = activeRowElement.offsetTop;
-        const relativeTop = elemTop - parentTop;
-        const targetScroll = relativeTop - (textDisplayBox.clientHeight / 2) + (activeRowElement.clientHeight / 2);
-        textDisplayBox.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
-      }
-    }
-
-    function updateProgressUI() {
-      if (currentSentences.length > 0) {
-        sentenceProgress.classList.remove('hidden');
-        sentenceProgress.innerText = `第 ${currentIndex + 1} / ${currentSentences.length} 句`;
-      } else {
-        sentenceProgress.classList.add('hidden');
-      }
-    }
-
-    function resetProgress() {
-      currentIndex = 0;
-      updateProgressUI();
-    }
-
-    // 篇章存檔管理
-    btnSaveCurrent.addEventListener('click', () => {
-      if (isEditing) btnToggleEdit.click();
-      if (!rawFullText.trim()) return alert('目前沒有文字可以儲存！');
-
-      const defaultName = rawFullText.trim().substring(0, 15).replace(/\n/g, ' ') + '...';
-      const fileName = prompt('請輸入篇章名稱：', defaultName);
-      if (!fileName) return;
-
-      const saved = JSON.parse(localStorage.getItem('dictation_saved_files') || '[]');
-      saved.unshift({
-        id: Date.now(),
-        title: fileName,
-        content: rawFullText,
-        date: new Date().toLocaleDateString()
-      });
-      localStorage.setItem('dictation_saved_files', JSON.
+  <!-- API 設定 Modal (含動態 Canvas 測試連線) -->
+  <div id="settingsModal" class="hidden fixed inset-
