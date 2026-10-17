@@ -5,23 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>智能默書掃描助手</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 離線備用 OCR 引擎 -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
     .loading-pulse { animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-    .visually-hidden {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      padding: 0;
-      margin: -1px;
-      overflow: hidden;
-      clip: rect(0, 0, 0, 0);
-      white-space: nowrap;
-      border: 0;
-    }
-    /* 當前高亮句子的外框與背景 */
     .active-row {
       background-color: #e0e7ff !important;
       border-color: #6366f1 !important;
@@ -32,7 +21,7 @@
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen pb-20">
 
-  <!-- 頂部導航 -->
+  <!-- 頂部導航欄 -->
   <header class="bg-indigo-600 text-white shadow-md sticky top-0 z-40">
     <div class="max-w-xl mx-auto px-4 py-3 flex items-center justify-between">
       <div class="flex items-center space-x-2">
@@ -46,6 +35,7 @@
         </button>
         <button id="btnOpenSettings" class="text-xs bg-indigo-500 hover:bg-indigo-400 active:scale-95 px-2.5 py-1.5 rounded-lg flex items-center space-x-1 font-medium transition">
           <i class="fa-solid fa-key"></i>
+          <span>API Key</span>
         </button>
       </div>
     </div>
@@ -53,26 +43,38 @@
 
   <main class="max-w-xl mx-auto px-4 mt-3 space-y-3">
 
-    <!-- 步驟 1: 拍照 / 上傳圖片 -->
+    <!-- 狀態標籤欄 -->
+    <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between text-xs">
+      <div class="flex items-center space-x-2">
+        <span class="font-semibold text-slate-600">OCR 模式：</span>
+        <span id="engineBadge" class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-medium">預設通道</span>
+      </div>
+      <button id="btnQuickConfig" class="text-indigo-600 font-bold hover:underline">自訂 / 測試 Key</button>
+    </div>
+
+    <!-- 步驟 1: 拍照與相簿選取 (已解決相簿變灰與無法重選問題) -->
     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
       <h2 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2.5">
         1. 獲取相片 (拍照或相簿)
       </h2>
 
+      <!-- 隱藏 input，accept="image/*" 解決 iPhone HEIC 變灰不可點選問題 -->
+      <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden">
+      <input type="file" id="galleryInput" accept="image/*" class="hidden">
+
       <div class="grid grid-cols-2 gap-3 mb-2">
-        <label for="cameraInput" class="cursor-pointer flex items-center justify-center space-x-2 p-3 bg-indigo-50 hover:bg-indigo-100 active:scale-95 text-indigo-700 rounded-xl border border-indigo-200 transition">
+        <button type="button" id="btnCamera" class="flex items-center justify-center space-x-2 p-3 bg-indigo-50 hover:bg-indigo-100 active:scale-95 text-indigo-700 rounded-xl border border-indigo-200 transition">
           <i class="fa-solid fa-camera text-lg"></i>
           <span class="text-xs font-semibold">即時拍照</span>
-          <input type="file" id="cameraInput" accept="image/*" capture="environment" class="visually-hidden">
-        </label>
+        </button>
 
-        <label for="galleryInput" class="cursor-pointer flex items-center justify-center space-x-2 p-3 bg-emerald-50 hover:bg-emerald-100 active:scale-95 text-emerald-700 rounded-xl border border-emerald-200 transition">
+        <button type="button" id="btnGallery" class="flex items-center justify-center space-x-2 p-3 bg-emerald-50 hover:bg-emerald-100 active:scale-95 text-emerald-700 rounded-xl border border-emerald-200 transition">
           <i class="fa-solid fa-images text-lg"></i>
           <span class="text-xs font-semibold">相簿選取</span>
-          <input type="file" id="galleryInput" accept="image/jpeg, image/png, image/jpg" class="visually-hidden">
-        </label>
+        </button>
       </div>
 
+      <!-- 圖片預覽區域 -->
       <div id="previewContainer" class="hidden mt-2">
         <div class="relative rounded-xl overflow-hidden bg-slate-900 border border-slate-200 max-h-48 flex items-center justify-center">
           <img id="imagePreview" src="" alt="預覽圖片" class="max-h-48 w-full object-contain">
@@ -82,9 +84,10 @@
         </div>
       </div>
 
+      <!-- 進度狀態顯示 -->
       <div id="ocrProgressBox" class="hidden mt-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
         <div class="flex justify-between text-xs font-semibold text-slate-600 mb-1">
-          <span id="ocrStatusText">正在掃描中...</span>
+          <span id="ocrStatusText">準備掃描...</span>
           <span id="ocrPercentText">處理中</span>
         </div>
         <div class="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
@@ -93,14 +96,13 @@
       </div>
     </div>
 
-    <!-- 步驟 2: 識別文字內容與操作 -->
+    <!-- 步驟 2: 識別文字內容 -->
     <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
       <div class="flex items-center justify-between mb-2">
         <h2 class="text-xs font-bold text-slate-500 uppercase tracking-wider">
           2. 默書內容清單
         </h2>
         
-        <!-- 操作按鈕組 -->
         <div class="flex items-center space-x-2 text-xs">
           <!-- 盲測按鈕 -->
           <button id="btnToggleBlind" class="px-2 py-1 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 font-semibold flex items-center space-x-1 transition">
@@ -114,7 +116,7 @@
             <span id="editBtnText">編輯</span>
           </button>
 
-          <!-- 儲存檔案按鈕 -->
+          <!-- 存檔 -->
           <button id="btnSaveCurrent" class="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 font-semibold flex items-center space-x-1 transition">
             <i class="fa-solid fa-floppy-disk"></i>
             <span>存檔</span>
@@ -124,13 +126,12 @@
         </div>
       </div>
       
-      <!-- 智能條列式顯示板 (帶 1. 2. 編號與遮蔽支援) -->
+      <!-- 條列式分句閱讀板 -->
       <div id="textDisplayBox" class="min-h-[160px] max-h-64 overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-xl text-sm leading-relaxed text-slate-800 space-y-1.5 select-none scroll-smooth">
         <div class="text-slate-400 p-2 text-center text-xs">請拍照、上傳圖片或點右上角載入歷史篇章...</div>
       </div>
 
-      <!-- 編輯框 (預設隱藏) -->
-      <textarea id="recognizedText" rows="6" class="hidden w-full p-3 bg-white border-2 border-indigo-500 rounded-xl text-sm leading-relaxed focus:outline-none transition mt-2" placeholder="在此手動修改或貼上文章..."></textarea>
+      <textarea id="recognizedText" rows="6" class="hidden w-full p-3 bg-white border-2 border-indigo-500 rounded-xl text-sm leading-relaxed focus:outline-none transition mt-2" placeholder="在此修正或修改文字..."></textarea>
     </div>
 
     <!-- 步驟 3: 默書控制與發音設定 -->
@@ -146,7 +147,7 @@
         <div>
           <label for="voiceSelect" class="block text-[11px] font-semibold text-slate-600 mb-1">語言 / 英語口音：</label>
           <select id="voiceSelect" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-indigo-500">
-            <option value="">載入語音中...</option>
+            <option value="">載入系統語音中...</option>
           </select>
         </div>
 
@@ -168,21 +169,18 @@
         <span class="text-[10px] text-indigo-400">Comma / 逗號等</span>
       </div>
 
-      <!-- 核心控制導航欄：上一句、播放當前、下一句 -->
+      <!-- 控制按鈕 -->
       <div class="grid grid-cols-5 gap-2 pt-1">
-        <!-- 上一句 -->
         <button id="btnPrev" class="col-span-1 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 font-bold py-3 rounded-xl transition flex flex-col items-center justify-center">
           <i class="fa-solid fa-backward-step text-base"></i>
           <span class="text-[10px] mt-0.5">上一句</span>
         </button>
 
-        <!-- 朗讀當前 / 重新讀 -->
         <button id="btnReplay" class="col-span-1 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 font-bold py-3 rounded-xl transition flex flex-col items-center justify-center">
           <i class="fa-solid fa-rotate-right text-base"></i>
           <span class="text-[10px] mt-0.5">重聽</span>
         </button>
 
-        <!-- 下一句 (重點按鈕) -->
         <button id="btnNext" class="col-span-3 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold py-3 rounded-xl shadow-md shadow-indigo-200 transition flex items-center justify-center space-x-2">
           <i class="fa-solid fa-forward-step text-lg"></i>
           <span class="text-sm tracking-wide">下一句</span>
@@ -203,7 +201,7 @@
 
   </main>
 
-  <!-- 存檔管理 Drawer / Modal -->
+  <!-- 篇章存檔管理 Modal -->
   <div id="filesModal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center">
     <div class="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-2xl p-5 shadow-2xl max-h-[85vh] flex flex-col space-y-4">
       <div class="flex justify-between items-center border-b pb-2">
@@ -213,34 +211,46 @@
         </div>
         <button id="btnCloseFiles" class="text-slate-400 hover:text-slate-600 text-lg p-1"><i class="fa-solid fa-times"></i></button>
       </div>
-
-      <div id="savedFilesList" class="flex-1 overflow-y-auto space-y-2 pr-1 min-h-[200px]">
-        <!-- 檔案列表動態產生 -->
-      </div>
+      <div id="savedFilesList" class="flex-1 overflow-y-auto space-y-2 pr-1 min-h-[200px]"></div>
     </div>
   </div>
 
-  <!-- API 設定 Modal -->
+  <!-- API 設定 Modal (含測試連線功能) -->
   <div id="settingsModal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center px-4">
     <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
       <div class="flex justify-between items-center border-b pb-2">
-        <h3 class="text-sm font-bold text-slate-800">OCR.Space API Key</h3>
+        <h3 class="text-sm font-bold text-slate-800">OCR.Space API Key 設定</h3>
         <button id="btnCloseModal" class="text-slate-400 hover:text-slate-600 text-lg"><i class="fa-solid fa-times"></i></button>
       </div>
-      <div>
-        <label class="block text-xs font-semibold text-slate-700 mb-1">專屬 Key (留空使用預設)：</label>
-        <input type="text" id="inputApiKey" placeholder="輸入 API Key" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
-        <p class="text-[11px] text-slate-400 mt-1">
-          免費申請：<a href="https://ocr.space/ocrapi/freekey" target="_blank" class="text-indigo-600 underline">ocr.space/ocrapi/freekey</a>
+      
+      <div class="space-y-3">
+        <p class="text-xs text-slate-600 leading-relaxed">
+          若公共通道繁忙，填入個人免費 Key 即可享受獨立線路（每人每月免費 25,000 次）：
         </p>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">你的專屬 API Key：</label>
+          <input type="text" id="inputApiKey" placeholder="留空則使用預設通道" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono">
+          <p class="text-[11px] text-slate-400 mt-1">
+            未有 Key？請至 <a href="https://ocr.space/ocrapi/freekey" target="_blank" class="text-indigo-600 underline font-semibold">ocr.space/ocrapi/freekey</a> 免費獲取（填寫 Email 即收到）。
+          </p>
+        </div>
+
+        <div id="testKeyFeedback" class="text-xs font-semibold hidden p-2 rounded-lg"></div>
       </div>
-      <button id="btnSaveKey" class="w-full bg-indigo-600 text-white font-bold py-2.5 rounded-xl text-xs hover:bg-indigo-700">儲存</button>
+
+      <div class="flex space-x-2 pt-1">
+        <button id="btnTestKey" class="w-1/3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs transition">測試 Key</button>
+        <button id="btnSaveKey" class="w-2/3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-xs transition">儲存並使用</button>
+      </div>
     </div>
   </div>
 
   <canvas id="compressCanvas" class="hidden"></canvas>
 
   <script>
+    const btnCamera = document.getElementById('btnCamera');
+    const btnGallery = document.getElementById('btnGallery');
     const cameraInput = document.getElementById('cameraInput');
     const galleryInput = document.getElementById('galleryInput');
     const previewContainer = document.getElementById('previewContainer');
@@ -249,6 +259,7 @@
     
     const ocrProgressBox = document.getElementById('ocrProgressBox');
     const ocrStatusText = document.getElementById('ocrStatusText');
+    const ocrPercentText = document.getElementById('ocrPercentText');
     const ocrProgressBar = document.getElementById('ocrProgressBar');
     
     const textDisplayBox = document.getElementById('textDisplayBox');
@@ -277,11 +288,15 @@
     const btnCloseFiles = document.getElementById('btnCloseFiles');
     const savedFilesList = document.getElementById('savedFilesList');
 
+    const engineBadge = document.getElementById('engineBadge');
     const btnOpenSettings = document.getElementById('btnOpenSettings');
+    const btnQuickConfig = document.getElementById('btnQuickConfig');
     const settingsModal = document.getElementById('settingsModal');
     const btnCloseModal = document.getElementById('btnCloseModal');
     const btnSaveKey = document.getElementById('btnSaveKey');
+    const btnTestKey = document.getElementById('btnTestKey');
     const inputApiKey = document.getElementById('inputApiKey');
+    const testKeyFeedback = document.getElementById('testKeyFeedback');
 
     let currentRate = 1.0;
     let availableVoices = [];
@@ -294,14 +309,75 @@
     let currentSentences = [];
     let currentIndex = 0;
 
-    // API Key 處理
-    btnOpenSettings.addEventListener('click', () => { inputApiKey.value = userApiKey; settingsModal.classList.remove('hidden'); });
+    function refreshBadge() {
+      if (userApiKey) {
+        engineBadge.className = 'bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-semibold';
+        engineBadge.innerText = '專屬 API Key';
+      } else {
+        engineBadge.className = 'bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-medium';
+        engineBadge.innerText = '預設通道';
+      }
+    }
+    refreshBadge();
+
+    // 觸發拍照與選取 (重設 value 確保每次點選都有反應)
+    btnCamera.addEventListener('click', () => {
+      cameraInput.value = '';
+      cameraInput.click();
+    });
+    btnGallery.addEventListener('click', () => {
+      galleryInput.value = '';
+      galleryInput.click();
+    });
+
+    cameraInput.addEventListener('change', (e) => { if (e.target.files.length > 0) handleImage(e.target.files[0]); });
+    galleryInput.addEventListener('change', (e) => { if (e.target.files.length > 0) handleImage(e.target.files[0]); });
+
+    // API Key 設定與即時測試
+    const openSettings = () => {
+      inputApiKey.value = userApiKey;
+      testKeyFeedback.className = 'hidden';
+      settingsModal.classList.remove('hidden');
+    };
+    btnOpenSettings.addEventListener('click', openSettings);
+    btnQuickConfig.addEventListener('click', openSettings);
     btnCloseModal.addEventListener('click', () => settingsModal.classList.add('hidden'));
+
     btnSaveKey.addEventListener('click', () => {
       userApiKey = inputApiKey.value.trim();
       if (userApiKey) localStorage.setItem('ocrspace_user_key', userApiKey);
       else localStorage.removeItem('ocrspace_user_key');
+      refreshBadge();
       settingsModal.classList.add('hidden');
+    });
+
+    btnTestKey.addEventListener('click', async () => {
+      const keyToTest = inputApiKey.value.trim() || DEFAULT_KEY;
+      testKeyFeedback.className = 'text-xs font-semibold p-2 rounded-lg bg-blue-50 text-blue-700 block';
+      testKeyFeedback.innerText = '正在測試連線中...';
+
+      try {
+        const fd = new FormData();
+        fd.append('apikey', keyToTest); // 放在 FormData 內，防止 CORS preflight 失敗
+        fd.append('base64Image', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAA=");
+        fd.append('language', 'eng');
+
+        const res = await fetch('https://api.ocr.space/parse/image', {
+          method: 'POST',
+          body: fd
+        });
+        const d = await res.json();
+        if (d.OCRExitCode === 1 || d.OCRExitCode === 2) {
+          testKeyFeedback.className = 'text-xs font-semibold p-2 rounded-lg bg-emerald-50 text-emerald-700 block';
+          testKeyFeedback.innerText = '✅ 連線成功！此 API Key 運作完全正常。';
+        } else {
+          testKeyFeedback.className = 'text-xs font-semibold p-2 rounded-lg bg-rose-50 text-rose-700 block';
+          testKeyFeedback.innerText = '❌ 驗證失敗：' + (d.ErrorMessage ? d.ErrorMessage.join(', ') : 'Key 無效');
+        }
+      } catch (err) {
+        testKeyFeedback.className = 'text-xs font-semibold p-2 rounded-lg bg-rose-50 text-rose-700 block';
+        testKeyFeedback.innerText = '❌ 連線錯誤：' + err.message;
+      }
     });
 
     // 盲測 / 遮蔽切換
@@ -340,7 +416,6 @@
       }
     });
 
-    // 分句：支援中英文逗號、句號、問號、感嘆號、換行
     function splitTextIntoChunks(text) {
       if (!text) return [];
       const regex = /[^，。！？；：,.!?;:\n]+[，。！？；：,.!?;:\n]*/g;
@@ -349,12 +424,10 @@
       return arr.map(s => s.trim()).filter(s => s.length > 0);
     }
 
-    // 將文字轉換為星號（保留標點讓發音與句型架構可辨識，中文及英文替換為 *）
     function maskText(str) {
       return str.replace(/[\u4e00-\u9fa5a-zA-Z0-9]/g, '*');
     }
 
-    // 渲染條列式閱讀板 (1. 2. 結構 + 內部滾動，絕不帶動螢幕跳動)
     function renderDisplayBoard(activeIdx) {
       if (!rawFullText) {
         textDisplayBox.innerHTML = '<div class="text-slate-400 p-2 text-center text-xs">請拍照、上傳圖片或點右上角載入歷史篇章...</div>';
@@ -370,13 +443,12 @@
         const row = document.createElement('div');
         row.className = `p-2 rounded-lg border border-slate-200/80 bg-white flex items-start space-x-2 cursor-pointer transition ${idx === activeIdx ? 'active-row shadow-sm' : 'hover:bg-slate-100/60'}`;
         
-        // 點擊任何一行，直接跳到該句朗讀
         row.addEventListener('click', (e) => {
           e.preventDefault();
           currentIndex = idx;
           renderDisplayBoard(currentIndex);
           updateProgressUI();
-          speakText(currentSentences[currentIndex], true);
+          speakText(currentSentences[currentIndex]);
         });
 
         const numSpan = document.createElement('span');
@@ -385,20 +457,15 @@
 
         const contentSpan = document.createElement('span');
         contentSpan.className = 'text-xs font-medium leading-relaxed flex-1';
-        
-        // 如果開啟盲測，顯示星號；否則顯示原文字
         contentSpan.innerText = isBlindMode ? maskText(chunk) : chunk;
 
         row.appendChild(numSpan);
         row.appendChild(contentSpan);
         textDisplayBox.appendChild(row);
 
-        if (idx === activeIdx) {
-          activeRowElement = row;
-        }
+        if (idx === activeIdx) activeRowElement = row;
       });
 
-      // 容器內部滾動
       if (activeRowElement) {
         const parentTop = textDisplayBox.offsetTop;
         const elemTop = activeRowElement.offsetTop;
@@ -422,17 +489,20 @@
       updateProgressUI();
     }
 
-    // 檔案存檔 (LocalStorage)
+    // 篇章存檔管理
     btnSaveCurrent.addEventListener('click', () => {
       if (isEditing) btnToggleEdit.click();
       if (!rawFullText.trim()) return alert('目前沒有文字可以儲存！');
 
       const defaultName = rawFullText.trim().substring(0, 15).replace(/\n/g, ' ') + '...';
-      const fileName = prompt('請輸入這篇默書的標題 / 名稱：', defaultName);
+      const fileName = prompt('請輸入篇章名稱：', defaultName);
       if (!fileName) return;
 
       const saved = JSON.parse(localStorage.getItem('dictation_saved_files') || '[]');
-      const newRecord = {
+      saved.unshift({
         id: Date.now(),
         title: fileName,
-        content
+        content: rawFullText,
+        date: new Date().toLocaleDateString()
+      });
+      localStorage.setItem('dictation_saved_files', JSON.
