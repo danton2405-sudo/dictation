@@ -1,381 +1,375 @@
 <!DOCTYPE html>
 <html lang="zh-HK">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>語音掃描助手</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <style>
-        body { font-family: 'Inter', 'PingFang HK', 'Microsoft JhengHei', sans-serif; }
-        .spinner { border-top-color: #3b82f6; animation: spinner 1.5s linear infinite; }
-        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
-        /* 隱藏預設的 input file 樣式 */
-        input[type="file"] { display: none; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>語音掃描助手 - 拍照識字朗讀</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Tesseract.js (免 API Key 前端 OCR 引擎，支援繁中與英文) -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <!-- FontAwesome 圖標 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    .loading-pulse {
+      animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+  </style>
 </head>
-<body class="bg-gray-50 min-h-screen text-gray-800">
+<body class="bg-slate-50 text-slate-800 min-h-screen pb-12">
 
-    <div class="max-w-2xl mx-auto p-4 sm:p-6 lg:p-8">
-        <!-- Header -->
-        <header class="text-center mb-8">
-            <h1 class="text-3xl font-bold text-blue-600 mb-2"><i class="fa-solid fa-language mr-2"></i>語音掃描助手</h1>
-            <p class="text-gray-500 text-sm">拍照或上傳圖片，自動擷取文字並用語音朗讀</p>
-        </header>
+  <!-- 頂部導航 -->
+  <header class="bg-indigo-600 text-white shadow-md sticky top-0 z-50">
+    <div class="max-w-xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center space-x-2">
+        <i class="fa-solid fa-camera-retro text-2xl"></i>
+        <h1 class="text-lg font-bold">語音掃描助手</h1>
+      </div>
+      <span class="text-xs bg-indigo-500 px-2 py-1 rounded-full font-medium">粵語 / 英語口音</span>
+    </div>
+  </header>
 
-        <!-- Section 1: Image Input & OCR -->
-        <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
-            <h2 class="text-lg font-semibold mb-4 text-gray-700">1. 獲取文字</h2>
-            
-            <div class="flex flex-col sm:flex-row gap-4 mb-4">
-                <label class="flex-1 cursor-pointer bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 rounded-xl p-4 flex flex-col items-center justify-center transition-colors">
-                    <i class="fa-solid fa-camera text-2xl mb-2"></i>
-                    <span class="font-medium">拍照 / 選取圖片</span>
-                    <input type="file" id="imageInput" accept="image/*" capture="environment">
-                </label>
-            </div>
+  <main class="max-w-xl mx-auto px-4 mt-4 space-y-4">
 
-            <!-- Image Preview -->
-            <div id="imagePreviewContainer" class="hidden mb-4 relative rounded-xl overflow-hidden bg-gray-100 border border-gray-200">
-                <img id="imagePreview" src="" alt="預覽圖片" class="w-full max-h-64 object-contain">
-                <button id="clearImageBtn" class="absolute top-2 right-2 bg-gray-800 bg-opacity-70 text-white rounded-full w-8 h-8 flex items-center justify-center hover:bg-red-500 transition-colors">
-                    <i class="fa-solid fa-times"></i>
-                </button>
-            </div>
+    <!-- 步驟 1: 拍照 / 上傳圖片 -->
+    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+      <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3">
+        1. 獲取相片 (支援拍照或相簿)
+      </h2>
 
-            <!-- OCR Loading State -->
-            <div id="ocrLoading" class="hidden flex-col items-center justify-center p-6 bg-blue-50 rounded-xl">
-                <div class="spinner border-4 border-blue-200 border-solid rounded-full w-10 h-10 mb-3"></div>
-                <p class="text-blue-600 font-medium">正在識別文字中 (AI OCR)...</p>
-            </div>
+      <!-- 隱藏的 Input -->
+      <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden">
+      <input type="file" id="galleryInput" accept="image/*" class="hidden">
 
-            <!-- Text Area -->
-            <div class="relative">
-                <textarea id="extractedText" rows="6" class="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-y transition-all" placeholder="識別出的文字會顯示在這裡，你也可以手動編輯..."></textarea>
-            </div>
-        </section>
+      <!-- 操作按鈕組 -->
+      <div class="grid grid-cols-2 gap-3 mb-4">
+        <button id="btnCamera" class="flex flex-col items-center justify-center p-4 bg-indigo-50 hover:bg-indigo-100 active:scale-95 text-indigo-700 rounded-xl border border-indigo-200 transition">
+          <i class="fa-solid fa-camera text-2xl mb-1"></i>
+          <span class="text-sm font-semibold">即時拍照</span>
+        </button>
+        <button id="btnGallery" class="flex flex-col items-center justify-center p-4 bg-emerald-50 hover:bg-emerald-100 active:scale-95 text-emerald-700 rounded-xl border border-emerald-200 transition">
+          <i class="fa-solid fa-images text-2xl mb-1"></i>
+          <span class="text-sm font-semibold">從相簿選取</span>
+        </button>
+      </div>
 
-        <!-- Section 2: Text-to-Speech (TTS) -->
-        <section class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-            <h2 class="text-lg font-semibold mb-4 text-gray-700">2. 語音朗讀設定</h2>
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <!-- Voice Selection -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">選擇語言 / 口音</label>
-                    <div class="relative">
-                        <select id="voiceSelect" class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl appearance-none focus:ring-2 focus:ring-blue-500 outline-none">
-                            <option value="">載入語音中...</option>
-                        </select>
-                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-500">
-                            <i class="fa-solid fa-chevron-down text-sm"></i>
-                        </div>
-                    </div>
-                </div>
+      <!-- 預覽區域 -->
+      <div id="previewContainer" class="hidden">
+        <div class="relative rounded-xl overflow-hidden bg-slate-100 border border-slate-200 max-h-60 flex items-center justify-center">
+          <img id="imagePreview" src="" alt="預覽圖片" class="max-h-60 w-full object-contain">
+          <button id="btnRemoveImage" class="absolute top-2 right-2 bg-black/60 text-white rounded-full p-2 text-xs hover:bg-black/80">
+            <i class="fa-solid fa-times"></i>
+          </button>
+        </div>
+      </div>
 
-                <!-- Speed Selection -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">朗讀速度</label>
-                    <div class="flex bg-gray-50 border border-gray-200 rounded-xl overflow-hidden p-1">
-                        <label class="flex-1 text-center cursor-pointer">
-                            <input type="radio" name="speed" value="0.5" class="peer sr-only">
-                            <div class="py-2 text-sm font-medium rounded-lg peer-checked:bg-blue-100 peer-checked:text-blue-700 text-gray-600 transition-colors">慢 (0.5x)</div>
-                        </label>
-                        <label class="flex-1 text-center cursor-pointer">
-                            <input type="radio" name="speed" value="1.0" class="peer sr-only" checked>
-                            <div class="py-2 text-sm font-medium rounded-lg peer-checked:bg-blue-100 peer-checked:text-blue-700 text-gray-600 transition-colors">正常 (1.0x)</div>
-                        </label>
-                        <label class="flex-1 text-center cursor-pointer">
-                            <input type="radio" name="speed" value="1.5" class="peer sr-only">
-                            <div class="py-2 text-sm font-medium rounded-lg peer-checked:bg-blue-100 peer-checked:text-blue-700 text-gray-600 transition-colors">快 (1.5x)</div>
-                        </label>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Playback Controls -->
-            <div class="flex justify-center items-center gap-4">
-                <button id="playBtn" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-6 rounded-xl shadow-md transition-transform transform active:scale-95 flex items-center justify-center gap-2">
-                    <i class="fa-solid fa-play"></i> 播放
-                </button>
-                <button id="pauseBtn" class="flex-none bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-4 px-6 rounded-xl shadow-md transition-transform transform active:scale-95 flex items-center justify-center gap-2 hidden">
-                    <i class="fa-solid fa-pause"></i> 暫停
-                </button>
-                <button id="resumeBtn" class="flex-none bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-6 rounded-xl shadow-md transition-transform transform active:scale-95 flex items-center justify-center gap-2 hidden">
-                    <i class="fa-solid fa-play"></i> 繼續
-                </button>
-                <button id="stopBtn" class="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-4 px-6 rounded-xl shadow-md transition-transform transform active:scale-95 flex items-center justify-center gap-2">
-                    <i class="fa-solid fa-stop"></i> 停止
-                </button>
-            </div>
-        </section>
-        
-        <footer class="mt-8 text-center text-xs text-gray-400">
-            Powered by Gemini AI OCR & Web Speech API
-        </footer>
+      <!-- OCR 識別進度條 -->
+      <div id="ocrProgressBox" class="hidden mt-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+        <div class="flex justify-between text-xs font-semibold text-slate-600 mb-1">
+          <span id="ocrStatusText">正在初始化引擎...</span>
+          <span id="ocrPercentText">0%</span>
+        </div>
+        <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+          <div id="ocrProgressBar" class="bg-indigo-600 h-2 rounded-full transition-all duration-200" style="width: 0%"></div>
+        </div>
+      </div>
     </div>
 
-    <script>
-        // DOM Elements
-        const imageInput = document.getElementById('imageInput');
-        const imagePreviewContainer = document.getElementById('imagePreviewContainer');
-        const imagePreview = document.getElementById('imagePreview');
-        const clearImageBtn = document.getElementById('clearImageBtn');
-        const ocrLoading = document.getElementById('ocrLoading');
-        const extractedText = document.getElementById('extractedText');
+    <!-- 步驟 2: 識別文字結果與編輯 -->
+    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+      <div class="flex items-center justify-between mb-2">
+        <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider">
+          2. 識別文字結果
+        </h2>
+        <button id="btnClearText" class="text-xs text-rose-500 hover:text-rose-700 font-medium">
+          清空文字
+        </button>
+      </div>
+      
+      <textarea id="recognizedText" rows="5" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition" placeholder="拍下相片或從相簿選取後，掃描出的文字會顯示在此，你亦可以直接在此修改文字..."></textarea>
+    </div>
+
+    <!-- 步驟 3: 語音朗讀設定 -->
+    <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+      <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider">
+        3. 朗讀口音與速度
+      </h2>
+
+      <!-- 語音及口音選擇 -->
+      <div>
+        <label for="voiceSelect" class="block text-xs font-semibold text-slate-600 mb-1">選擇語言 / 英語口音：</label>
+        <select id="voiceSelect" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <option value="">正在載入系統語音...</option>
+        </select>
+        <p class="text-[11px] text-slate-400 mt-1">※ 若手機未內建粵語，將自動使用系統預設中文。</p>
+      </div>
+
+      <!-- 語速設定 -->
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 mb-2">朗讀速度：</label>
+        <div class="grid grid-cols-3 gap-2">
+          <button type="button" data-speed="0.75" class="speed-btn py-2 px-3 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+            🐢 慢速 (0.75x)
+          </button>
+          <button type="button" data-speed="1.0" class="speed-btn py-2 px-3 rounded-lg border border-indigo-600 bg-indigo-50 text-xs font-semibold text-indigo-700">
+            🚶 中速 (正常)
+          </button>
+          <button type="button" data-speed="1.3" class="speed-btn py-2 px-3 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+            🏃 快速 (1.3x)
+          </button>
+        </div>
+      </div>
+
+      <!-- 播放控制按鈕 -->
+      <div class="pt-2 flex gap-3">
+        <button id="btnPlay" class="flex-1 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold py-3.5 px-4 rounded-xl shadow-md shadow-indigo-200 flex items-center justify-center space-x-2 transition">
+          <i class="fa-solid fa-volume-high"></i>
+          <span>開始朗讀</span>
+        </button>
+        <button id="btnStop" class="bg-slate-200 hover:bg-slate-300 active:scale-95 text-slate-700 font-bold py-3.5 px-5 rounded-xl transition">
+          <i class="fa-solid fa-stop"></i>
+        </button>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // DOM 元素引用
+    const btnCamera = document.getElementById('btnCamera');
+    const btnGallery = document.getElementById('btnGallery');
+    const cameraInput = document.getElementById('cameraInput');
+    const galleryInput = document.getElementById('galleryInput');
+    const previewContainer = document.getElementById('previewContainer');
+    const imagePreview = document.getElementById('imagePreview');
+    const btnRemoveImage = document.getElementById('btnRemoveImage');
+    
+    const ocrProgressBox = document.getElementById('ocrProgressBox');
+    const ocrStatusText = document.getElementById('ocrStatusText');
+    const ocrPercentText = document.getElementById('ocrPercentText');
+    const ocrProgressBar = document.getElementById('ocrProgressBar');
+    
+    const recognizedText = document.getElementById('recognizedText');
+    const btnClearText = document.getElementById('btnClearText');
+    const voiceSelect = document.getElementById('voiceSelect');
+    const speedButtons = document.querySelectorAll('.speed-btn');
+    const btnPlay = document.getElementById('btnPlay');
+    const btnStop = document.getElementById('btnStop');
+
+    let currentRate = 1.0;
+    let availableVoices = [];
+
+    // 觸發輸入
+    btnCamera.addEventListener('click', () => cameraInput.click());
+    btnGallery.addEventListener('click', () => galleryInput.click());
+
+    cameraInput.addEventListener('change', (e) => handleImage(e.target.files[0]));
+    galleryInput.addEventListener('change', (e) => handleImage(e.target.files[0]));
+
+    btnRemoveImage.addEventListener('click', () => {
+      previewContainer.classList.add('hidden');
+      imagePreview.src = '';
+      cameraInput.value = '';
+      galleryInput.value = '';
+    });
+
+    btnClearText.addEventListener('click', () => {
+      recognizedText.value = '';
+    });
+
+    // 處理圖片上傳與 OCR
+    async function handleImage(file) {
+      if (!file) return;
+
+      // 預覽圖片
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        imagePreview.src = e.target.result;
+        previewContainer.classList.remove('hidden');
+      };
+      reader.readAsDataURL(file);
+
+      // 顯示進度條
+      ocrProgressBox.classList.remove('hidden');
+      ocrProgressBar.style.width = '5%';
+      ocrStatusText.innerText = '正在載入雙語識別核心...';
+      ocrPercentText.innerText = '5%';
+
+      try {
+        // 使用 Tesseract 進行中英文雙語識別 (chi_tra: 繁體中文, eng: 英文)
+        const worker = await Tesseract.createWorker('chi_tra+eng', 1, {
+          logger: m => {
+            if (m.status === 'recognizing text') {
+              const p = Math.round(m.progress * 100);
+              ocrProgressBar.style.width = `${p}%`;
+              ocrPercentText.innerText = `${p}%`;
+              ocrStatusText.innerText = '正在掃描圖片文字...';
+            } else if (m.status === 'loading tesseract core') {
+              ocrStatusText.innerText = '載入核心元件中...';
+            } else if (m.status === 'loading language traineddata') {
+              ocrStatusText.innerText = '下載/載入繁中與英文模型...';
+            }
+          }
+        });
+
+        const ret = await worker.recognize(file);
+        await worker.terminate();
+
+        ocrProgressBar.style.width = '100%';
+        ocrPercentText.innerText = '100%';
+        ocrStatusText.innerText = '識別成功！';
+
+        // 整理識別到的文字
+        const cleanText = ret.data.text.trim();
+        if (cleanText) {
+          recognizedText.value = cleanText;
+        } else {
+          recognizedText.value = '（未能在圖片中偵測到清晰文字，請嘗試拉近距離或調整光線再試一次）';
+        }
+
+        setTimeout(() => {
+          ocrProgressBox.classList.add('hidden');
+        }, 1200);
+
+      } catch (err) {
+        console.error(err);
+        ocrStatusText.innerText = '識別失敗，請重試';
+        alert('OCR 文字識別發生錯誤，請確保網絡正常並重試。');
+        ocrProgressBox.classList.add('hidden');
+      }
+    }
+
+    // 載入系統 TTS 語音
+    function loadVoices() {
+      if (!('speechSynthesis' in window)) {
+        alert('你的瀏覽器不支援語音合成朗讀功能');
+        return;
+      }
+
+      availableVoices = window.speechSynthesis.getVoices();
+      if (!availableVoices.length) return;
+
+      voiceSelect.innerHTML = '';
+
+      // 分類語音：粵語、各國英語口音、其他
+      const cantoneseVoices = [];
+      const englishVoices = [];
+
+      availableVoices.forEach(v => {
+        const lang = v.lang.replace('_', '-');
+        const name = v.name.toLowerCase();
+
+        // 粵語特徵檢測
+        if (lang === 'zh-HK' || lang === 'yue' || lang === 'zh-yue' || name.includes('cantonese') || name.includes('hong kong') || name.includes('香港')) {
+          cantoneseVoices.push(v);
+        } 
+        // 英語口音檢測
+        else if (lang.startsWith('en')) {
+          englishVoices.push(v);
+        }
+      });
+
+      // 建立粵語分組
+      const cantoneseGroup = document.createElement('optgroup');
+      cantoneseGroup.label = '🇭🇰 粵語 (Cantonese)';
+      if (cantoneseVoices.length > 0) {
+        cantoneseVoices.forEach(v => {
+          const opt = document.createElement('option');
+          opt.value = v.name;
+          opt.textContent = `粵語 - ${v.name}`;
+          cantoneseGroup.appendChild(opt);
+        });
+      } else {
+        const opt = document.createElement('option');
+        opt.value = "";
+        opt.textContent = "系統暫無專屬粵語包 (將以預設中文朗讀)";
+        cantoneseGroup.appendChild(opt);
+      }
+      voiceSelect.appendChild(cantoneseGroup);
+
+      // 建立英語口音分組
+      const englishGroup = document.createElement('optgroup');
+      englishGroup.label = '🌐 英語口音 (English Accents)';
+      englishVoices.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.name;
         
-        const voiceSelect = document.getElementById('voiceSelect');
-        const speedRadios = document.getElementsByName('speed');
-        
-        const playBtn = document.getElementById('playBtn');
-        const pauseBtn = document.getElementById('pauseBtn');
-        const resumeBtn = document.getElementById('resumeBtn');
-        const stopBtn = document.getElementById('stopBtn');
+        let accentLabel = '英語';
+        const lang = v.lang.replace('_', '-');
+        if (lang === 'en-US') accentLabel = '🇺🇸 美國 (US)';
+        else if (lang === 'en-GB') accentLabel = '🇬🇧 英國 (UK)';
+        else if (lang === 'en-AU') accentLabel = '🇦🇺 澳洲 (AU)';
+        else if (lang === 'en-CA') accentLabel = '🇨🇦 加拿大 (CA)';
+        else if (lang === 'en-IN') accentLabel = '🇮🇳 印度 (IN)';
+        else if (lang === 'en-IE') accentLabel = '🇮🇪 愛爾蘭 (IE)';
+        else if (lang === 'en-NZ') accentLabel = '🇳🇿 紐西蘭 (NZ)';
+        else if (lang === 'en-ZA') accentLabel = '🇿🇦 南非 (ZA)';
 
-        // State
-        let synth = window.speechSynthesis;
-        let voices = [];
-        let currentUtterance = null;
+        opt.textContent = `${accentLabel} - ${v.name}`;
+        englishGroup.appendChild(opt);
+      });
+      voiceSelect.appendChild(englishGroup);
+    }
 
-        // --- 1. OCR (Gemini API) Logic ---
-        
-        imageInput.addEventListener('change', async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+      loadVoices();
+    }
 
-            // Show preview
-            const reader = new FileReader();
-            reader.onload = async (event) => {
-                const base64DataWithPrefix = event.target.result;
-                imagePreview.src = base64DataWithPrefix;
-                imagePreviewContainer.classList.remove('hidden');
-                
-                // Extract base64 without prefix for API
-                const base64Data = base64DataWithPrefix.split(',')[1];
-                await performOCR(base64Data, file.type);
-            };
-            reader.readAsDataURL(file);
+    // 語速切換
+    speedButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        speedButtons.forEach(b => {
+          b.className = 'speed-btn py-2 px-3 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50';
         });
+        btn.className = 'speed-btn py-2 px-3 rounded-lg border border-indigo-600 bg-indigo-50 text-xs font-semibold text-indigo-700';
+        currentRate = parseFloat(btn.dataset.speed);
+      });
+    });
 
-        clearImageBtn.addEventListener('click', () => {
-            imageInput.value = '';
-            imagePreview.src = '';
-            imagePreviewContainer.classList.add('hidden');
-            extractedText.value = '';
-        });
+    // 播放朗讀
+    btnPlay.addEventListener('click', () => {
+      const text = recognizedText.value.trim();
+      if (!text) {
+        alert('請先拍下文字或在文字框輸入文字！');
+        return;
+      }
 
-        async function performOCR(base64Data, mimeType) {
-            ocrLoading.classList.remove('hidden');
-            extractedText.classList.add('opacity-50');
-            
-            try {
-                // Using the unified generation endpoint with empty key for runtime injection
-                const apiKey = ""; 
-                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
-                
-                const prompt = "Extract all text from this image, preserving the original language (Chinese/English) and formatting. Only return the extracted text. Do not add any markdown formatting or explanations.";
-                
-                const payload = {
-                    contents: [
-                        {
-                            role: "user",
-                            parts: [
-                                { text: prompt },
-                                {
-                                    inlineData: {
-                                        mimeType: mimeType,
-                                        data: base64Data
-                                    }
-                                }
-                            ]
-                        }
-                    ]
-                };
+      window.speechSynthesis.cancel(); // 停止先前的朗讀
 
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = currentRate;
 
-                const result = await response.json();
-                
-                if (result.candidates && result.candidates.length > 0 && result.candidates[0].content) {
-                    const text = result.candidates[0].content.parts[0].text;
-                    extractedText.value = text.trim();
-                } else {
-                    extractedText.value = "無法識別圖片中的文字，請重試。";
-                    console.error("API Error:", result);
-                }
-            } catch (error) {
-                console.error("OCR Fetch Error:", error);
-                extractedText.value = "發生連線錯誤，無法進行識別。";
-            } finally {
-                ocrLoading.classList.add('hidden');
-                extractedText.classList.remove('opacity-50');
-            }
-        }
+      // 指定所選語音
+      const selectedVoiceName = voiceSelect.value;
+      if (selectedVoiceName) {
+        const found = availableVoices.find(v => v.name === selectedVoiceName);
+        if (found) utterance.voice = found;
+      }
 
-        // --- 2. Text-to-Speech (TTS) Logic ---
+      utterance.onstart = () => {
+        btnPlay.classList.add('loading-pulse');
+        btnPlay.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i><span>朗讀中...</span>';
+      };
 
-        function populateVoiceList() {
-            voices = synth.getVoices();
-            if (voices.length === 0) return;
+      utterance.onend = utterance.onerror = () => {
+        btnPlay.classList.remove('loading-pulse');
+        btnPlay.innerHTML = '<i class="fa-solid fa-volume-high"></i><span>開始朗讀</span>';
+      };
 
-            voiceSelect.innerHTML = '';
-            
-            // Organize voices by priority
-            const cantoneseVoices = [];
-            const englishVoices = { US: [], GB: [], AU: [], IN: [], CA: [], Other: [] };
-            const otherVoices = [];
+      window.speechSynthesis.speak(utterance);
+    });
 
-            voices.forEach(voice => {
-                const lang = voice.lang.toLowerCase();
-                const name = voice.name;
-
-                if (lang.includes('zh-hk') || lang.includes('yue')) {
-                    cantoneseVoices.push(voice);
-                } else if (lang.startsWith('en-')) {
-                    if (lang.includes('us')) englishVoices.US.push(voice);
-                    else if (lang.includes('gb') || lang.includes('uk')) englishVoices.GB.push(voice);
-                    else if (lang.includes('au')) englishVoices.AU.push(voice);
-                    else if (lang.includes('in')) englishVoices.IN.push(voice);
-                    else if (lang.includes('ca')) englishVoices.CA.push(voice);
-                    else englishVoices.Other.push(voice);
-                } else if (lang.includes('zh-tw') || lang.includes('zh-cn')) {
-                     otherVoices.push(voice); // Keep other Chinese dialects near the bottom
-                } else {
-                    // Ignore other random languages to keep UI clean, or add them if needed.
-                }
-            });
-
-            // Helper to create options
-            const createOptGroup = (label, voiceArray) => {
-                if (voiceArray.length === 0) return;
-                const group = document.createElement('optgroup');
-                group.label = label;
-                voiceArray.forEach(voice => {
-                    const option = document.createElement('option');
-                    option.textContent = `${voice.name} (${voice.lang})`;
-                    if (voice.default) option.textContent += ' — Default';
-                    option.value = voice.name;
-                    group.appendChild(option);
-                });
-                voiceSelect.appendChild(group);
-            };
-
-            createOptGroup('🇭🇰 廣東話 (Cantonese)', cantoneseVoices);
-            createOptGroup('🇺🇸 英語 (美國口音)', englishVoices.US);
-            createOptGroup('🇬🇧 英語 (英國口音)', englishVoices.GB);
-            createOptGroup('🇦🇺 英語 (澳洲口音)', englishVoices.AU);
-            createOptGroup('🇮🇳 英語 (印度口音)', englishVoices.IN);
-            createOptGroup('🇨🇦 英語 (加拿大口音)', englishVoices.CA);
-            createOptGroup('🌍 英語 (其他口音)', englishVoices.Other);
-            createOptGroup('🌐 國語/普通話', otherVoices);
-
-            // Select Cantonese by default if available
-            if (cantoneseVoices.length > 0) {
-                voiceSelect.value = cantoneseVoices[0].name;
-            } else if (englishVoices.US.length > 0) {
-                voiceSelect.value = englishVoices.US[0].name;
-            }
-        }
-
-        // Handle voice loading (some browsers load async)
-        populateVoiceList();
-        if (speechSynthesis.onvoiceschanged !== undefined) {
-            speechSynthesis.onvoiceschanged = populateVoiceList;
-        }
-
-        // Play Controls
-        function getSelectedSpeed() {
-            for (const radio of speedRadios) {
-                if (radio.checked) return parseFloat(radio.value);
-            }
-            return 1.0;
-        }
-
-        function updateUIState(state) {
-            if (state === 'playing') {
-                playBtn.classList.add('hidden');
-                pauseBtn.classList.remove('hidden');
-                resumeBtn.classList.add('hidden');
-            } else if (state === 'paused') {
-                playBtn.classList.add('hidden');
-                pauseBtn.classList.add('hidden');
-                resumeBtn.classList.remove('hidden');
-            } else { // stopped
-                playBtn.classList.remove('hidden');
-                pauseBtn.classList.add('hidden');
-                resumeBtn.classList.add('hidden');
-            }
-        }
-
-        playBtn.addEventListener('click', () => {
-            if (synth.speaking && synth.paused) {
-                synth.resume();
-                updateUIState('playing');
-                return;
-            }
-            
-            synth.cancel(); // Stop anything playing
-            
-            const textToSpeak = extractedText.value;
-            if (!textToSpeak.trim()) {
-                alert("請先輸入或掃描文字！");
-                return;
-            }
-
-            currentUtterance = new SpeechSynthesisUtterance(textToSpeak);
-            
-            // Set Voice
-            const selectedVoiceName = voiceSelect.value;
-            const voice = voices.find(v => v.name === selectedVoiceName);
-            if (voice) {
-                currentUtterance.voice = voice;
-            }
-
-            // Set Speed
-            currentUtterance.rate = getSelectedSpeed();
-            
-            // Events
-            currentUtterance.onstart = () => updateUIState('playing');
-            currentUtterance.onend = () => updateUIState('stopped');
-            currentUtterance.onerror = (e) => {
-                if(e.error !== 'canceled') {
-                    console.error("TTS Error:", e);
-                }
-                updateUIState('stopped');
-            };
-
-            synth.speak(currentUtterance);
-        });
-
-        pauseBtn.addEventListener('click', () => {
-            if (synth.speaking) {
-                synth.pause();
-                updateUIState('paused');
-            }
-        });
-
-        resumeBtn.addEventListener('click', () => {
-            if (synth.paused) {
-                synth.resume();
-                updateUIState('playing');
-            }
-        });
-
-        stopBtn.addEventListener('click', () => {
-            synth.cancel();
-            updateUIState('stopped');
-        });
-
-        // Ensure speech synthesis stops when window is closed/refreshed
-        window.addEventListener('beforeunload', () => {
-            synth.cancel();
-        });
-
-    </script>
+    // 停止朗讀
+    btnStop.addEventListener('click', () => {
+      window.speechSynthesis.cancel();
+      btnPlay.classList.remove('loading-pulse');
+      btnPlay.innerHTML = '<i class="fa-solid fa-volume-high"></i><span>開始朗讀</span>';
+    });
+  </script>
 </body>
 </html>
