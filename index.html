@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>語音掃描助手 - 智能默書版</title>
+  <title>智能默書掃描助手</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 本地備用 OCR 庫，API 斷線時自動頂上 -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
     .loading-pulse { animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
     textarea::selection { background: #c7d2fe; color: #312e81; }
-    
-    /* 將隱藏的 input 改為絕對定位但不可見，以避免某些瀏覽器攔截 */
     .visually-hidden {
       position: absolute;
       width: 1px;
@@ -27,16 +27,30 @@
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen pb-12">
 
+  <!-- 頂部導航 -->
   <header class="bg-indigo-600 text-white shadow-md sticky top-0 z-50">
     <div class="max-w-xl mx-auto px-4 py-3 flex items-center justify-between">
       <div class="flex items-center space-x-2">
-        <i class="fa-solid fa-pen-clip text-2xl"></i>
-        <h1 class="text-lg font-bold">智能默書掃描助手</h1>
+        <i class="fa-solid fa-pen-clip text-xl"></i>
+        <h1 class="text-base font-bold">智能默書掃描助手</h1>
       </div>
+      <button id="btnOpenSettings" class="text-xs bg-indigo-500 hover:bg-indigo-400 active:scale-95 px-2.5 py-1.5 rounded-lg flex items-center space-x-1 transition font-medium">
+        <i class="fa-solid fa-key"></i>
+        <span>設定 API Key</span>
+      </button>
     </div>
   </header>
 
   <main class="max-w-xl mx-auto px-4 mt-4 space-y-4">
+
+    <!-- 狀態標籤欄 -->
+    <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between text-xs">
+      <div class="flex items-center space-x-2">
+        <span class="font-semibold text-slate-600">辨識核心：</span>
+        <span id="engineBadge" class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-medium">公共通道</span>
+      </div>
+      <button id="btnQuickConfig" class="text-indigo-600 font-bold hover:underline">自訂專屬 Key</button>
+    </div>
 
     <!-- 步驟 1: 拍照 / 上傳圖片 -->
     <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
@@ -44,26 +58,21 @@
         1. 獲取相片 (拍照或相簿)
       </h2>
 
-      <!-- 修復重點：使用 label 包裹 input，這是移動端最可靠的觸發方式 -->
       <div class="grid grid-cols-2 gap-3 mb-3">
-        
-        <!-- 即時拍照按鈕 -->
         <label for="cameraInput" class="cursor-pointer flex flex-col items-center justify-center p-4 bg-indigo-50 hover:bg-indigo-100 active:scale-95 text-indigo-700 rounded-xl border border-indigo-200 transition">
           <i class="fa-solid fa-camera text-2xl mb-1"></i>
           <span class="text-sm font-semibold">即時拍照</span>
           <input type="file" id="cameraInput" accept="image/*" capture="environment" class="visually-hidden">
         </label>
 
-        <!-- 從相簿選取按鈕 -->
         <label for="galleryInput" class="cursor-pointer flex flex-col items-center justify-center p-4 bg-emerald-50 hover:bg-emerald-100 active:scale-95 text-emerald-700 rounded-xl border border-emerald-200 transition">
           <i class="fa-solid fa-images text-2xl mb-1"></i>
           <span class="text-sm font-semibold">從相簿選取</span>
-          <!-- 移除了 capture 屬性，確保彈出相簿選項 -->
           <input type="file" id="galleryInput" accept="image/jpeg, image/png, image/jpg" class="visually-hidden">
         </label>
-
       </div>
 
+      <!-- 圖片預覽 -->
       <div id="previewContainer" class="hidden">
         <div class="relative rounded-xl overflow-hidden bg-slate-900 border border-slate-200 max-h-60 flex items-center justify-center">
           <img id="imagePreview" src="" alt="預覽圖片" class="max-h-60 w-full object-contain">
@@ -73,13 +82,14 @@
         </div>
       </div>
 
+      <!-- 進度指示條 -->
       <div id="ocrProgressBox" class="hidden mt-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
         <div class="flex justify-between text-xs font-semibold text-slate-600 mb-1">
-          <span id="ocrStatusText">正在掃描文字...</span>
+          <span id="ocrStatusText">正在掃描中...</span>
           <span id="ocrPercentText">處理中</span>
         </div>
         <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-          <div id="ocrProgressBar" class="bg-indigo-600 h-2 rounded-full transition-all duration-300" style="width: 40%"></div>
+          <div id="ocrProgressBar" class="bg-indigo-600 h-2 rounded-full transition-all duration-300" style="width: 30%"></div>
         </div>
       </div>
     </div>
@@ -93,10 +103,10 @@
         <button id="btnClearText" class="text-xs text-rose-500 hover:text-rose-700 font-medium">清空</button>
       </div>
       
-      <textarea id="recognizedText" rows="6" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition" placeholder="掃描後的文字會自動填入此處..."></textarea>
+      <textarea id="recognizedText" rows="6" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition" placeholder="掃描後的文字會自動填入此處，可手動修正..."></textarea>
     </div>
 
-    <!-- 步驟 3: 默書控制與設定 -->
+    <!-- 步驟 3: 默書控制與發音設定 -->
     <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 space-y-4">
       <h2 class="text-sm font-bold text-slate-500 uppercase tracking-wider">
         3. 默書控制與發音設定
@@ -124,7 +134,6 @@
         </div>
       </div>
 
-      <!-- 默書專屬功能區 -->
       <div class="bg-indigo-50 border border-indigo-100 p-3 rounded-xl mt-2 flex flex-col space-y-2">
         <div class="flex items-center justify-between">
           <div class="flex items-center space-x-2">
@@ -133,32 +142,55 @@
           </div>
           <span id="sentenceProgress" class="text-[11px] bg-indigo-200 text-indigo-800 px-2 py-0.5 rounded-full font-bold hidden">第 0/0 句</span>
         </div>
-        <p class="text-[10px] text-indigo-500 leading-tight">打勾後，按「讀下一句」時會自動讀出「逗號/句號/Comma/Full stop」等。</p>
+        <p class="text-[10px] text-indigo-500 leading-tight">每按一次讀下一句，會自動讀出逗號、句號或 comma、full stop。</p>
       </div>
 
-      <!-- 播放控制按鈕 -->
       <div class="pt-1 grid grid-cols-3 gap-2">
-        <!-- 播放全部 -->
         <button id="btnPlay" class="col-span-1 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 font-bold py-3 px-2 rounded-xl transition flex flex-col items-center space-y-1">
           <i class="fa-solid fa-play text-lg"></i>
           <span class="text-[11px]">全部朗讀</span>
         </button>
         
-        <!-- 讀下一句 -->
         <button id="btnNext" class="col-span-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold py-3 px-2 rounded-xl shadow-md shadow-indigo-200 transition flex flex-col items-center space-y-1">
           <i class="fa-solid fa-forward-step text-lg"></i>
           <span class="text-[12px] tracking-wide">讀下一段 / 下一句</span>
         </button>
       </div>
 
-      <!-- 停止/重設按鈕 -->
       <button id="btnStop" class="w-full mt-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 active:scale-95 text-rose-600 font-bold py-2.5 rounded-xl transition text-xs flex items-center justify-center">
         <i class="fa-solid fa-stop mr-1.5"></i> 停止朗讀 / 重設進度
       </button>
-
     </div>
 
   </main>
+
+  <!-- API 設定 Modal 彈窗 -->
+  <div id="settingsModal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center px-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+      <div class="flex justify-between items-center border-b pb-2">
+        <h3 class="text-sm font-bold text-slate-800">OCR.Space API Key 設定</h3>
+        <button id="btnCloseModal" class="text-slate-400 hover:text-slate-600 text-lg"><i class="fa-solid fa-times"></i></button>
+      </div>
+      
+      <div class="space-y-3">
+        <p class="text-xs text-slate-600 leading-relaxed">
+          公共通道容易因多人使用而被限流。建議花 10 秒去免費登記專屬 Key（填寫 Email 即收到，每月免費 25,000 次）：
+        </p>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">你的專屬 Key：</label>
+          <input type="text" id="inputApiKey" placeholder="留空則使用預設公共通道" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+          <p class="text-[11px] text-slate-400 mt-1">
+            免費領取網址：<a href="https://ocr.space/ocrapi/freekey" target="_blank" class="text-indigo-600 underline font-semibold">ocr.space/ocrapi/freekey</a>
+          </p>
+        </div>
+      </div>
+
+      <div class="flex space-x-2 pt-2">
+        <button id="btnSaveKey" class="flex-1 bg-indigo-600 text-white font-bold py-2.5 rounded-xl text-xs hover:bg-indigo-700 transition">儲存並使用</button>
+      </div>
+    </div>
+  </div>
 
   <canvas id="compressCanvas" class="hidden"></canvas>
 
@@ -171,6 +203,7 @@
     
     const ocrProgressBox = document.getElementById('ocrProgressBox');
     const ocrStatusText = document.getElementById('ocrStatusText');
+    const ocrPercentText = document.getElementById('ocrPercentText');
     const ocrProgressBar = document.getElementById('ocrProgressBar');
     
     const recognizedText = document.getElementById('recognizedText');
@@ -185,21 +218,54 @@
     const sentenceProgress = document.getElementById('sentenceProgress');
     const compressCanvas = document.getElementById('compressCanvas');
 
+    const engineBadge = document.getElementById('engineBadge');
+    const btnOpenSettings = document.getElementById('btnOpenSettings');
+    const btnQuickConfig = document.getElementById('btnQuickConfig');
+    const settingsModal = document.getElementById('settingsModal');
+    const btnCloseModal = document.getElementById('btnCloseModal');
+    const btnSaveKey = document.getElementById('btnSaveKey');
+    const inputApiKey = document.getElementById('inputApiKey');
+
     let currentRate = 1.0;
     let availableVoices = [];
     
-    const OCR_API_KEY = 'K87899142388957';
+    // 預設公共 Key
+    const DEFAULT_KEY = 'K87899142388957';
+    let userApiKey = localStorage.getItem('ocrspace_user_key') || '';
+
+    function refreshBadge() {
+      if (userApiKey) {
+        engineBadge.className = 'bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-semibold';
+        engineBadge.innerText = '專屬 API Key';
+      } else {
+        engineBadge.className = 'bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-medium';
+        engineBadge.innerText = '預設公共通道';
+      }
+    }
+    refreshBadge();
+
+    // Modal 事件
+    const openSettings = () => { inputApiKey.value = userApiKey; settingsModal.classList.remove('hidden'); };
+    btnOpenSettings.addEventListener('click', openSettings);
+    btnQuickConfig.addEventListener('click', openSettings);
+    btnCloseModal.addEventListener('click', () => settingsModal.classList.add('hidden'));
+    btnSaveKey.addEventListener('click', () => {
+      userApiKey = inputApiKey.value.trim();
+      if (userApiKey) {
+        localStorage.setItem('ocrspace_user_key', userApiKey);
+      } else {
+        localStorage.removeItem('ocrspace_user_key');
+      }
+      refreshBadge();
+      settingsModal.classList.add('hidden');
+    });
+
     let currentSentences = [];
     let currentIndex = 0;
     let lastText = "";
 
-    // 處理圖片上傳
-    cameraInput.addEventListener('change', (e) => {
-      if (e.target.files.length > 0) handleImage(e.target.files[0]);
-    });
-    galleryInput.addEventListener('change', (e) => {
-      if (e.target.files.length > 0) handleImage(e.target.files[0]);
-    });
+    cameraInput.addEventListener('change', (e) => { if (e.target.files.length > 0) handleImage(e.target.files[0]); });
+    galleryInput.addEventListener('change', (e) => { if (e.target.files.length > 0) handleImage(e.target.files[0]); });
 
     btnRemoveImage.addEventListener('click', () => {
       previewContainer.classList.add('hidden');
@@ -213,11 +279,12 @@
       resetProgress();
     });
 
+    // 壓縮相片至最佳辨識解析度 (不超過 1400px)，減少上傳體積避免超時
     function compressImage(file) {
       return new Promise((resolve) => {
         const img = new Image();
         img.onload = () => {
-          const maxDim = 1200;
+          const maxDim = 1400;
           let w = img.width, h = img.height;
           if (w > maxDim || h > maxDim) {
             if (w > h) { h = Math.round((h * maxDim) / w); w = maxDim; }
@@ -227,12 +294,39 @@
           compressCanvas.height = h;
           const ctx = compressCanvas.getContext('2d');
           ctx.drawImage(img, 0, 0, w, h);
-          resolve(compressCanvas.toDataURL('image/jpeg', 0.85));
+          resolve(compressCanvas.toDataURL('image/jpeg', 0.82));
         };
         const reader = new FileReader();
         reader.onload = (e) => img.src = e.target.result;
         reader.readAsDataURL(file);
       });
+    }
+
+    // 備用方案：本地 Tesseract OCR 辨識引擎
+    async function fallbackLocalOCR(dataUrl) {
+      ocrStatusText.innerText = '雲端繁忙，已自動切換本地雙語掃描...';
+      ocrPercentText.innerText = '本地處理中';
+      ocrProgressBar.style.width = '50%';
+
+      try {
+        const worker = await Tesseract.createWorker('chi_tra+eng', 1, {
+          logger: m => {
+            if (m.status === 'recognizing text') {
+              const p = Math.round(m.progress * 100);
+              ocrProgressBar.style.width = `${p}%`;
+              ocrPercentText.innerText = `${p}%`;
+            }
+          }
+        });
+        const ret = await worker.recognize(dataUrl);
+        await worker.terminate();
+        recognizedText.value = ret.data.text.trim() || '（未能掃描出文字，請拉近距離再試一次）';
+        ocrProgressBar.style.width = '100%';
+        ocrStatusText.innerText = '本地掃描完成！';
+      } catch (err) {
+        alert('本地引擎掃描失敗：' + err.message);
+        ocrStatusText.innerText = '掃描出錯';
+      }
     }
 
     async function handleImage(file) {
@@ -242,9 +336,12 @@
       previewContainer.classList.remove('hidden');
 
       ocrProgressBox.classList.remove('hidden');
-      ocrProgressBar.style.width = '30%';
-      ocrStatusText.innerText = '正在上傳分析中...';
+      ocrProgressBar.style.width = '35%';
+      ocrStatusText.innerText = '正在連線雲端分析中...';
+      ocrPercentText.innerText = '上傳中';
       resetProgress();
+
+      const activeKey = userApiKey || DEFAULT_KEY;
 
       try {
         const formData = new FormData();
@@ -257,29 +354,31 @@
 
         const response = await fetch('https://api.ocr.space/parse/image', {
           method: 'POST',
-          headers: { 'apikey': OCR_API_KEY },
+          headers: { 'apikey': activeKey },
           body: formData
         });
 
-        ocrProgressBar.style.width = '80%';
         const data = await response.json();
 
         if (data.ParsedResults && data.ParsedResults.length > 0) {
           const parsed = data.ParsedResults[0].ParsedText.trim();
-          recognizedText.value = parsed || '（未能辨識文字）';
+          recognizedText.value = parsed || '（未能辨識到清晰文字）';
           ocrProgressBar.style.width = '100%';
           ocrStatusText.innerText = '掃描完成！';
+          ocrPercentText.innerText = '100%';
         } else {
-          throw new Error('解析失敗');
+          const errMsg = data.ErrorMessage ? data.ErrorMessage.join(', ') : '解析失敗';
+          throw new Error(errMsg);
         }
       } catch (err) {
-        alert('OCR 解析發生問題，請稍後再試。');
-        ocrStatusText.innerText = '辨識出錯';
+        console.warn('雲端 OCR 異常，啟動本地備用引擎:', err);
+        // 不報死錯誤，直接自動切換本地辨識
+        await fallbackLocalOCR(base64DataUrl);
       }
-      setTimeout(() => ocrProgressBox.classList.add('hidden'), 1000);
+      setTimeout(() => ocrProgressBox.classList.add('hidden'), 1200);
     }
 
-    // 語音載入
+    // 載入系統 TTS
     function loadVoices() {
       if (!('speechSynthesis' in window)) return;
       availableVoices = window.speechSynthesis.getVoices();
@@ -313,7 +412,15 @@
       englishGroup.label = '🌐 英語口音 (English)';
       englishVoices.forEach(v => {
         const opt = document.createElement('option');
-        opt.value = v.name; opt.textContent = `英語 - ${v.name}`;
+        opt.value = v.name; 
+        let label = '英語';
+        const lang = v.lang.replace('_', '-');
+        if (lang === 'en-US') label = '🇺🇸 美國';
+        else if (lang === 'en-GB') label = '🇬🇧 英國';
+        else if (lang === 'en-AU') label = '🇦🇺 澳洲';
+        else if (lang === 'en-CA') label = '🇨🇦 加拿大';
+        else if (lang === 'en-IN') label = '🇮🇳 印度';
+        opt.textContent = `${label} - ${v.name}`;
         englishGroup.appendChild(opt);
       });
       voiceSelect.appendChild(englishGroup);
@@ -332,8 +439,7 @@
       });
     });
 
-    // ========== 默書核心邏輯 ========== //
-
+    // 默書邏輯
     function resetProgress() {
       currentIndex = 0;
       lastText = "";
